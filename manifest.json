@@ -1,0 +1,23 @@
+{
+  "name": "Daymark",
+  "short_name": "Daymark",
+  "description": "A personal journal for remembering what you did each day.",
+  "id": "./",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#f5eedf",
+  "theme_color": "#f5eedf",
+  "categories": ["lifestyle", "productivity"],
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "maskable" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "shortcuts": [
+    { "name": "Search", "url": "./index.html#/search", "icons": [{ "src": "icon-192.png", "sizes": "192x192" }] },
+    { "name": "On This Day", "url": "./index.html#/onthisday", "icons": [{ "src": "icon-192.png", "sizes": "192x192" }] }
+  ]
+}
