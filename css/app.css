@@ -433,3 +433,30 @@ mark { background: var(--gold-soft); color: inherit; border-radius: 3px; padding
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { transition: none !important; animation: none !important; }
 }
+
+/* ---------- calendar extras: stats, today, month list ---------- */
+.stat-tiles { display: grid; gap: 10px; margin: 16px 0 4px; }
+.stat-tiles.n3 { grid-template-columns: repeat(3, 1fr); }
+.stat-tiles.n2 { grid-template-columns: repeat(2, 1fr); }
+.tile { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 12px 8px 10px; text-align: center; box-shadow: var(--shadow-sm); }
+.tile strong { display: block; font-family: var(--font-head); font-size: 28px; font-weight: 600; line-height: 1.1; color: var(--accent); }
+.tile span { display: block; font-size: 13px; color: var(--ink-3); line-height: 1.3; margin-top: 2px; }
+.today-card { border-left: 4px solid var(--gold); }
+.today-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.today-all { display: inline-flex; align-items: center; gap: 2px; font-size: 14px; font-weight: 600; color: var(--accent); }
+.today-all .ic { width: 16px; height: 16px; }
+.today-lines { display: flex; flex-direction: column; gap: 8px; margin: 6px 0 12px; }
+.today-line { display: flex; gap: 10px; color: var(--ink-2); line-height: 1.45; }
+.today-time { flex: none; min-width: 64px; font-family: var(--font-head); font-weight: 600; color: var(--ink); font-size: 15px; padding-top: 1px; }
+.today-more { font-size: 14px; color: var(--accent); font-weight: 600; }
+.today-prompt { color: var(--ink-2); margin: 6px 0 14px !important; }
+.section-note { display: inline-flex; align-items: center; gap: 4px; margin-left: auto; font-family: var(--font-body); font-size: 14px; font-weight: 500; color: var(--ink-3); }
+.section-note .ic { width: 15px; height: 15px; fill: var(--gold); }
+.day-row { align-items: center; }
+.day-row .list-date { display: flex; flex-direction: column; align-items: center; width: 40px; line-height: 1.1; }
+.day-row .list-date b { font-size: 22px; font-weight: 600; }
+.day-row .list-date small { font-family: var(--font-body); font-size: 12px; font-weight: 500; color: var(--ink-3); text-transform: uppercase; letter-spacing: .04em; }
+.day-row .list-text { flex: 1; min-width: 0; font-size: 15.5px; line-height: 1.45; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.row-star .ic { width: 14px; height: 14px; color: var(--gold); fill: var(--gold); vertical-align: -1px; margin-right: 4px; }
+.row-thumb { flex: none; width: 48px; height: 48px; border-radius: 10px; overflow: hidden; background: var(--paper-2); }
+.row-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }

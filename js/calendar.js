@@ -57,6 +57,73 @@
   }
   App.snippet = snippet;
 
+  // Days in a row with at least one entry, ending today (or yesterday if
+  // today is still blank, so the streak doesn't look broken in the morning).
+  function streak(today) {
+    let d = App.store.hasDate(today) ? today : App.addDays(today, -1);
+    let n = 0;
+    while (App.store.hasDate(d)) { n++; d = App.addDays(d, -1); }
+    return n;
+  }
+
+  function statTiles(key, today, days) {
+    const year = key.slice(0, 4);
+    const yearDays = App.store.dates().filter(d => d.startsWith(year + "-")).length;
+    const tiles = [
+      [streak(today), "day streak"],
+      [days.length, days.length === 1 ? "day this month" : "days this month"],
+      [yearDays, `${yearDays === 1 ? "day" : "days"} in ${year}`]
+    ];
+    if (key !== App.monthKey(today)) tiles.shift();
+    return `<div class="stat-tiles n${tiles.length}">${tiles.map(([n, label]) => `
+      <div class="tile"><strong>${n}</strong><span>${App.escapeHtml(label)}</span></div>`).join("")}</div>`;
+  }
+
+  function todayCard(today) {
+    const list = App.store.forDate(today);
+    const first = !App.store.all().length;
+    return `
+      <section class="card today-card">
+        <div class="today-head">
+          <a class="card-kicker" href="#/day/${today}">${App.icon("edit")} Today · ${App.escapeHtml(App.parseDate(today).toLocaleDateString(undefined, { weekday: "long", month: "short", day: "numeric" }))}</a>
+          ${list.length ? `<a class="today-all" href="#/day/${today}">Open ${App.icon("next")}</a>` : ""}
+        </div>
+        ${list.length ? `<div class="today-lines">${list.slice(0, 3).map(e => `
+          <a class="today-line" href="#/day/${today}">
+            ${e.time ? `<span class="today-time">${App.escapeHtml(App.fmtTime(e.time))}</span>` : ""}
+            <span>${App.escapeHtml(snippet(e, 90))}</span>
+          </a>`).join("")}
+          ${list.length > 3 ? `<a class="today-more" href="#/day/${today}">+ ${App.plural(list.length - 3, "more entry", "more entries")}</a>` : ""}
+        </div>` : `<p class="today-prompt">${first
+          ? "Write your first entry. Tap the microphone on your keyboard to talk instead of typing."
+          : "Nothing written yet today. What have you been up to?"}</p>`}
+        <button type="button" class="btn ${list.length ? "ghost sm" : "primary"}" data-a="write">${App.icon("plus")} ${list.length ? "Add more" : "Write about today"}</button>
+      </section>`;
+  }
+
+  // Every other day you wrote on in the shown month, newest first.
+  function monthList(key, today, days, starredCount) {
+    const shown = days.filter(d => d !== today).reverse();
+    if (!shown.length) return "";
+    return `
+      <section class="section">
+        <h2 class="section-title">${App.icon("book")} ${key === App.monthKey(today) ? "Earlier this month" : App.escapeHtml(App.fmtMonth(key))}
+          ${starredCount ? `<small class="section-note">${App.icon("star")} ${App.plural(starredCount, "highlight")}</small>` : ""}</h2>
+        <div class="list">${shown.map(d => {
+          const list = App.store.forDate(d);
+          const e = list.find(x => x.starred && x.text) || list.find(x => x.text) || list[0];
+          const thumb = dayThumb(list);
+          return `
+            <a class="list-row day-row" href="#/day/${d}">
+              <span class="list-date"><b>${Number(d.slice(8))}</b><small>${App.escapeHtml(App.parseDate(d).toLocaleDateString(undefined, { weekday: "short" }))}</small></span>
+              <span class="list-text">${list.some(x => x.starred) ? `<span class="row-star">${App.icon("star")}</span>` : ""}${App.escapeHtml(snippet(e, 100))}${list.length > 1 ? ` <em class="muted">+${list.length - 1}</em>` : ""}</span>
+              ${thumb ? `<span class="row-thumb">${App.photoImg(thumb, true)}</span>` : ""}
+            </a>`;
+        }).join("")}
+        </div>
+      </section>`;
+  }
+
   function render(root) {
     const key = month;
     const today = App.todayStr();
@@ -75,7 +142,8 @@
       </header>
       ${key !== App.monthKey(today) ? `<div class="center"><button type="button" class="chip" data-a="today">Back to today</button></div>` : ""}
       <div class="cal">${gridHtml(key)}</div>
-      <p class="cal-stats">${days.length ? `You wrote on ${App.plural(days.length, "day")} this month${starred.length ? ` · ${App.plural(starred.length, "highlight")}` : ""}` : "Nothing written this month yet."}</p>
+      ${statTiles(key, today, days)}
+      ${key === App.monthKey(today) ? todayCard(today) : ""}
 
       ${past.length && key === App.monthKey(today) ? `
         <a class="card otd-card" href="#/onthisday">
@@ -88,28 +156,15 @@
           }).join("")}
         </a>` : ""}
 
-      ${starred.length ? `
-        <section class="section">
-          <h2 class="section-title">${App.icon("star")} Highlights this month</h2>
-          <div class="list">${starred.map(e => `
-            <a class="list-row" href="#/day/${e.date}">
-              <span class="list-date">${App.escapeHtml(App.parseDate(e.date).toLocaleDateString(undefined, { month: "short", day: "numeric" }))}</span>
-              <span class="list-text">${App.escapeHtml(snippet(e, 110))}</span>
-            </a>`).join("")}
-          </div>
-        </section>` : ""}
-
-      ${!App.store.all().length ? `
-        <div class="empty">
-          <p class="empty-title">Welcome to your journal</p>
-          <p>Tap <strong>+</strong> to write about today. Use the microphone on your keyboard to talk instead of type.</p>
-        </div>` : ""}
+      ${monthList(key, today, days, starred.length)}
     `;
     App.hydrate(root);
     root.querySelectorAll("[data-nav]").forEach(b => { b.onclick = () => { month = App.addMonths(month, Number(b.dataset.nav)); render(root); }; });
     const todayBtn = root.querySelector('[data-a="today"]');
     if (todayBtn) todayBtn.onclick = () => { month = App.monthKey(App.todayStr()); render(root); };
     root.querySelector('[data-a="pick"]').onclick = () => pickMonth(root);
+    const write = root.querySelector('[data-a="write"]');
+    if (write) write.onclick = () => App.openEditor({ date: App.todayStr() });
   }
 
   // Jump straight to any month and year.
