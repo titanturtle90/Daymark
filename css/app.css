@@ -39,6 +39,8 @@
 
 /* ---------- base ---------- */
 *, *::before, *::after { box-sizing: border-box; }
+/* No double-tap zoom anywhere (pinch-zoom still works). */
+html, body, * { touch-action: manipulation; }
 html { -webkit-text-size-adjust: 100%; }
 html, body { scrollbar-width: none; }
 ::-webkit-scrollbar { display: none; }
