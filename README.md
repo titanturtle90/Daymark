@@ -29,8 +29,8 @@ AI transcription with a record button, auto-tagging, an AI "ask my journal" chat
 1. **Create the project.** Go to [console.firebase.google.com](https://console.firebase.google.com) → *Add project* → name it (e.g. `daymark`). Google Analytics isn't needed.
 2. **Upgrade to the Blaze plan** (bottom-left *Upgrade*). New projects need it to store photos. Personal use should stay within the free allowance. Set a budget alert at Google Cloud → Billing → Budgets & alerts (e.g. $5).
 3. **Turn on Google sign-in.** Go to *Build → Authentication → Get started → Sign-in method → Google → Enable*.
-4. **Create the database.** Go to *Build → Firestore Database → Create database*, pick a location near you, and start in **production mode**. Then open the *Rules* tab, paste in [`firestore.rules`](firestore.rules), and click *Publish*.
-5. **Create photo storage.** Go to *Build → Storage → Get started* and use the same location. Open the *Rules* tab, paste in [`storage.rules`](storage.rules), and click *Publish*.
+4. **Create the database.** Go to *Build → Firestore Database → Create database*: choose the **Standard** edition, keep the database ID `(default)`, pick a US region such as **us-east1**, start in **production mode**, and leave scheduled backups off (they cost extra; use the app's own backup). Then open the *Rules* tab, paste in [`firestore.rules`](firestore.rules), and click *Publish*.
+5. **Create photo storage.** Go to *Build → Storage → Get started* and choose **us-east1, us-central1 or us-west1**. Only these three regions get the free 5 GB; anywhere else every GB is charged. Open the *Rules* tab, paste in [`storage.rules`](storage.rules), and click *Publish*.
 6. **Register the web app.** Go to *Project settings* (gear icon) → *Your apps* → the `</>` web icon. Name it `Daymark` and tick **"Also set up Firebase Hosting"**. Copy the `firebaseConfig` values into [`js/config.js`](js/config.js).
 7. **Let backups include photos.** Open [Google Cloud Shell](https://shell.cloud.google.com) for the project and run this once, replacing the bucket name with your `storageBucket` value:
    ```
