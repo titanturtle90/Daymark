@@ -70,15 +70,15 @@
     const list = App.store.forDate(date);
     const rel = App.relativeDay(date);
     root.innerHTML = `
-      <header class="page-head day-head">
-        <a class="icon-btn" href="#/calendar/${App.monthKey(date)}" aria-label="Back to calendar">${App.icon("calendar")}</a>
-        <div class="day-title">
-          ${rel ? `<div class="kicker">${rel}</div>` : ""}
-          <h1>${App.escapeHtml(App.parseDate(date).toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" }))}</h1>
-          <div class="sub">${App.parseDate(date).getFullYear()}</div>
-        </div>
-        <div class="day-nav">
+      <header class="day-head">
+        <a class="back-link" href="#/calendar/${App.monthKey(date)}">${App.icon("back")}${App.icon("calendar")}<span>${App.escapeHtml(App.fmtMonth(App.monthKey(date)))}</span></a>
+        <div class="day-bar">
           <a class="icon-btn" href="#/day/${App.addDays(date, -1)}" aria-label="Previous day">${App.icon("back")}</a>
+          <div class="day-title">
+            <div class="kicker">${rel ? `${rel} · ` : ""}${App.escapeHtml(App.parseDate(date).toLocaleDateString(undefined, { weekday: "long" }))}</div>
+            <h1>${App.escapeHtml(App.parseDate(date).toLocaleDateString(undefined, { month: "long", day: "numeric" }))}</h1>
+            <div class="sub">${App.parseDate(date).getFullYear()}</div>
+          </div>
           <a class="icon-btn" href="#/day/${App.addDays(date, 1)}" aria-label="Next day">${App.icon("next")}</a>
         </div>
       </header>

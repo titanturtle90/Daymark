@@ -225,11 +225,15 @@ mark { background: var(--gold-soft); color: inherit; border-radius: 3px; padding
 .mp-m.on { background: var(--ink); color: var(--paper); }
 
 /* ---------- day & entries ---------- */
-.day-head { align-items: flex-start; }
-.day-title { flex: 1; text-align: center; }
-.day-title h1 { font-size: 26px; }
-.day-title .sub { color: var(--ink-3); font-family: var(--font-head); }
-.day-nav { display: flex; }
+.day-head { margin: 2px 0 18px; }
+.back-link { display: inline-flex; align-items: center; gap: 4px; min-height: 40px; padding: 4px 10px 4px 2px; margin-left: -4px; border-radius: 999px; color: var(--accent); font-weight: 600; font-size: 15px; }
+.back-link .ic { width: 18px; height: 18px; }
+.back-link .ic + .ic { margin-left: -2px; margin-right: 2px; }
+.back-link:active { background: var(--paper-2); }
+.day-bar { display: flex; align-items: center; gap: 4px; margin-top: 4px; }
+.day-title { flex: 1; min-width: 0; text-align: center; }
+.day-title h1 { font-size: 32px; line-height: 1.15; }
+.day-title .sub { color: var(--ink-3); font-family: var(--font-head); font-size: 17px; }
 .entries { display: flex; flex-direction: column; gap: 14px; margin-bottom: 18px; }
 .entry {
   position: relative; background: var(--card); border: 1px solid var(--line); border-radius: var(--radius);
