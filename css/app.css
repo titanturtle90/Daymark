@@ -131,7 +131,16 @@ mark { background: var(--gold-soft); color: inherit; border-radius: 3px; padding
 
 /* ---------- app frame ---------- */
 .app { max-width: 640px; margin: 0 auto; }
-.view { padding: calc(var(--safe-t) + 12px) 16px calc(var(--nav-h) + var(--safe-b) + 28px); min-height: 100vh; }
+.view { padding: calc(var(--safe-t) + 12px) 16px calc(var(--nav-h) + var(--safe-b) + 28px); min-height: 100vh; min-height: 100dvh; }
+/* A paper strip behind the status bar / Dynamic Island so scrolled content
+   slides underneath it instead of showing through. */
+.app::before {
+  content: ""; position: fixed; top: 0; left: 0; right: 0; z-index: 25;
+  height: var(--safe-t);
+  background: rgba(245, 238, 223, .97);
+  -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
+  pointer-events: none;
+}
 .page-head { display: flex; align-items: center; gap: 8px; margin: 6px 0 16px; }
 .page-head h1 { font-size: 32px; }
 .kicker { font-size: 13px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--accent); }
