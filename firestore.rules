@@ -1,12 +1,15 @@
-// Firestore rules for Daymark. Each person can only read and write
-// their own journal under users/{their uid}.
-// Paste into Firebase console → Firestore Database → Rules, or deploy with
-// `firebase deploy --only firestore:rules`.
+// Firestore rules for Daymark. Only the owner's Google account can read or
+// write, and only inside their own users/{uid} folder.
+// Deploy with `firebase deploy --only firestore:rules`, or paste into
+// Firebase console → Firestore Database → Rules.
+// To let someone else use it later, add their UID to owners().
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
+    function owners() { return ['uN289hLfIVPstE4rSR2ivBcpYt22']; }
     match /users/{uid}/{document=**} {
-      allow read, write: if request.auth != null && request.auth.uid == uid;
+      allow read, write: if request.auth != null && request.auth.uid == uid
+                         && request.auth.uid in owners();
     }
   }
 }
