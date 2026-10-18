@@ -12,7 +12,8 @@
     App.go("#/search");
   };
 
-  const terms = () => App.norm(state.q).split(/\s+/).filter(Boolean);
+  // The typed text, read as plain English (dates, "highlights", filler words).
+  const parsed = () => App.parseQuery(state.q);
   const active = () => !!(state.q.trim() || state.tags.size || state.starred || state.from || state.to);
 
   function haystack(e) {
@@ -20,11 +21,16 @@
   }
 
   function results() {
-    const ts = terms();
+    const p = parsed();
+    const ts = p.terms;
     return App.store.all().filter(e => {
-      if (state.starred && !e.starred) return false;
+      if ((state.starred || p.starred) && !e.starred) return false;
       if (state.from && e.date < state.from) return false;
       if (state.to && e.date > state.to) return false;
+      if (p.from && e.date < p.from) return false;
+      if (p.to && e.date > p.to) return false;
+      if (p.monthDay && e.date.slice(5) !== p.monthDay) return false;
+      if (p.month && e.date.slice(5, 7) !== p.month) return false;
       if (state.tags.size) {
         const have = new Set((e.tags || []).map(App.norm));
         for (const t of state.tags) if (!have.has(t)) return false;
@@ -123,17 +129,22 @@
     if (!active()) {
       const recent = App.store.all().filter(e => e.starred).sort((a, b) => (a.date < b.date ? 1 : -1)).slice(0, 10);
       box.innerHTML = `
-        <p class="muted small">Try a person, place or activity, like <em>dentist</em> or <em>beach</em>. Tap a tag above to see every entry with it.</p>
+        <p class="muted small">Search a word, person or place, like <em>dentist</em> or <em>Sam</em>, or ask in plain English: <em>what did I do on Oct 14</em>, <em>last week</em>, <em>highlights of 2025</em>. Tap a tag above to see every entry with it.</p>
         ${recent.length ? `<h2 class="section-title">${App.icon("star")} Recent highlights</h2><div class="entries">${recent.map(e => App.entryCard({ ...e, text: App.snippet(e, 200) }, { showDate: true })).join("")}</div>` : ""}`;
       App.bindEntries(box);
       return;
     }
-    const ts = terms();
+    const p = parsed();
+    const ts = p.terms;
     const all = results();
     const shown = all.slice(0, state.limit);
+    // Say how a question was read, e.g. "October 14 · every year · “sam”".
+    const readAs = [p.when, p.starred ? "highlights" : "", ts.length ? `“${ts.join(" ")}”` : ""].filter(Boolean);
+    const showReadAs = state.q.trim() && (p.when || p.starred || ts.join(" ") !== App.norm(state.q).trim().replace(/\s+/g, " "));
     box.innerHTML = `
-      <p class="result-count">${all.length ? App.plural(all.length, "entry", "entries") + (new Set(all.map(e => e.date)).size !== all.length ? ` on ${App.plural(new Set(all.map(e => e.date)).size, "day")}` : "") : "No matches"}</p>
-      <div class="entries">${shown.map(e => App.entryCard({ ...e, text: around(e.text, ts, 220) }, { showDate: true, terms: state.q.trim().split(/\s+/).filter(Boolean), maxPhotos: 4 })).join("")}</div>
+      ${showReadAs ? `<p class="read-as">${App.icon("search")}<span>Showing <strong>${readAs.map(App.escapeHtml).join(" · ") || "everything"}</strong></span></p>` : ""}
+      <p class="result-count">${all.length ? App.plural(all.length, "entry", "entries") + (new Set(all.map(e => e.date)).size !== all.length ? ` on ${App.plural(new Set(all.map(e => e.date)).size, "day")}` : "") : "No matches. Try fewer or different words."}</p>
+      <div class="entries">${shown.map(e => App.entryCard({ ...e, text: around(e.text, ts, 220) }, { showDate: true, terms: ts, maxPhotos: 4 })).join("")}</div>
       ${all.length > shown.length ? `<div class="center"><button type="button" class="btn ghost" data-a="more">Show more</button></div>` : ""}
     `;
     App.bindEntries(box);

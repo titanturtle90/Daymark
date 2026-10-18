@@ -81,6 +81,7 @@ js/lock.js          PIN lock
 js/editor.js        new/edit entry sheet
 js/calendar.js      month view (home)
 js/day.js           day view + shared entry card
+js/query.js         reads plain-English searches (dates, "highlights", filler words)
 js/search.js        search + filters
 js/onthisday.js     On This Day
 js/backup.js        zip backup / restore
