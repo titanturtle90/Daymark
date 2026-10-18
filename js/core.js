@@ -141,10 +141,12 @@
         if (!document.querySelector(".sheet-root")) document.body.classList.remove("sheet-open");
       }, 280);
       opts.onClose && opts.onClose();
+      if (api.onClosed) api.onClosed();
     };
     root.querySelector(".sheet-backdrop").onclick = () => close();
     root.querySelector(".sheet-close").onclick = () => close();
-    return { el: root, body, head: root.querySelector(".sheet-head-actions"), close };
+    const api = { el: root, body, head: root.querySelector(".sheet-head-actions"), close };
+    return api;
   };
 
   // ---------- confirm ----------

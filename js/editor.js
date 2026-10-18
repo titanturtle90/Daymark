@@ -90,10 +90,46 @@
     dateIn.value = e.date;
     timeIn.value = e.time || "";
     textIn.value = e.text || "";
-    const grow = () => { textIn.style.height = "auto"; textIn.style.height = Math.max(textIn.scrollHeight, 180) + "px"; };
+    const scroller = sheet.body;
+    const paper = form.querySelector(".ed-paper");
+    // Fit the textarea to its text. Measuring means briefly setting
+    // height:auto, which would shrink the sheet and snap its scroll back to
+    // the top, so hold the paper's height and the scroll position meanwhile.
+    const grow = () => {
+      const top = scroller.scrollTop;
+      paper.style.minHeight = paper.offsetHeight + "px";
+      textIn.style.height = "auto";
+      textIn.style.height = Math.max(textIn.scrollHeight, 180) + "px";
+      paper.style.minHeight = "";
+      scroller.scrollTop = top;
+    };
+    // Keep the line being typed visible above the keyboard and Save bar.
+    const mirror = document.createElement("div");
+    const keepCaretVisible = () => {
+      if (document.activeElement !== textIn) return;
+      const cs = getComputedStyle(textIn);
+      mirror.style.cssText = `position:absolute;visibility:hidden;top:0;left:-9999px;white-space:pre-wrap;overflow-wrap:break-word;box-sizing:border-box;width:${textIn.clientWidth}px;font:${cs.font};line-height:${cs.lineHeight};padding:${cs.padding};letter-spacing:${cs.letterSpacing}`;
+      mirror.textContent = textIn.value.slice(0, textIn.selectionEnd);
+      const marker = document.createElement("span");
+      marker.textContent = "​";
+      mirror.appendChild(marker);
+      document.body.appendChild(mirror);
+      const caretBottom = textIn.getBoundingClientRect().top + marker.offsetTop + parseFloat(cs.lineHeight || 30);
+      mirror.remove();
+      const vv = window.visualViewport;
+      const footer = sheet.body.querySelector(".ed-footer");
+      let limit = vv ? vv.offsetTop + vv.height : window.innerHeight;
+      if (footer) limit = Math.min(limit, footer.getBoundingClientRect().top);
+      const overflow = caretBottom - (limit - 16);
+      if (overflow > 0) scroller.scrollTop += overflow;
+    };
+    const onViewport = () => requestAnimationFrame(keepCaretVisible);
+    if (window.visualViewport) window.visualViewport.addEventListener("resize", onViewport);
+    sheet.onClosed = () => { if (window.visualViewport) window.visualViewport.removeEventListener("resize", onViewport); };
     dateIn.onchange = () => { if (dateIn.value) e.date = dateIn.value; changed(); };
     timeIn.onchange = () => { e.time = timeIn.value || null; changed(); };
-    textIn.oninput = () => { e.text = textIn.value; grow(); changed(); };
+    textIn.oninput = () => { e.text = textIn.value; grow(); keepCaretVisible(); changed(); };
+    textIn.onfocus = () => setTimeout(keepCaretVisible, 350); // after the keyboard slides up
     requestAnimationFrame(grow);
 
     let finished = false; // saved or discarded: a pending draft write must not resurrect it
