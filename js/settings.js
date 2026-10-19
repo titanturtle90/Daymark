@@ -12,6 +12,10 @@
     const cloud = s.mode === "cloud";
     const user = s.user;
     const delay = App.lock.delayMin();
+    const st = s.settings || {};
+    const people = st.people || [];
+    const groups = st.groups || [];
+    const [bm, bd] = (st.birthday || "-").split("-");
 
     root.innerHTML = `
       <header class="page-head"><h1>Settings</h1></header>
@@ -60,6 +64,36 @@
       </section>
 
       <section class="card settings">
+        <h2 class="card-kicker">${App.icon("search")} Smart search</h2>
+        <p>Teach search the names and words you use, so questions like <em>when did I last see Jimmy?</em> find everything.</p>
+
+        <h3 class="set-sub">People</h3>
+        <p class="muted small">Add someone once with every way you refer to them, e.g. <em>Sarah</em> also known as <em>my sister, sis</em>.</p>
+        <div class="set-list" data-list="people">${people.map((p, i) => `
+          <button type="button" class="set-row" data-edit-person="${i}"><strong>${App.escapeHtml(p.name)}</strong><span>${App.escapeHtml((p.aliases || []).join(", "))}</span>${App.icon("edit")}</button>`).join("") || `<p class="muted small empty-row">No people yet.</p>`}
+        </div>
+        <button type="button" class="btn ghost sm" data-a="add-person">${App.icon("plus")} Add person</button>
+
+        <h3 class="set-sub">Your word groups</h3>
+        <p class="muted small">Words that mean the same thing to you, e.g. <em>pickleball</em> also means <em>pb, pickle</em>.</p>
+        <div class="set-list">${groups.map((g, i) => `
+          <button type="button" class="set-row" data-edit-group="${i}"><strong>${App.escapeHtml(g.name)}</strong><span>${App.escapeHtml((g.words || []).join(", "))}</span>${App.icon("edit")}</button>`).join("") || `<p class="muted small empty-row">No word groups yet.</p>`}
+        </div>
+        <button type="button" class="btn ghost sm" data-a="add-group">${App.icon("plus")} Add word group</button>
+        <details class="builtin">
+          <summary>Built-in groups</summary>
+          ${App.builtinGroups.map(g => `<p><strong>${App.escapeHtml(g.name)}:</strong> ${App.escapeHtml(g.words.join(", "))}</p>`).join("")}
+        </details>
+
+        <h3 class="set-sub">Your birthday</h3>
+        <p class="muted small">So you can search <em>what did I do on my birthday</em>.</p>
+        <div class="bday-row">
+          <select name="bmonth" aria-label="Birthday month"><option value="">Month</option>${Array.from({ length: 12 }, (_, i) => `<option value="${String(i + 1).padStart(2, "0")}" ${bm === String(i + 1).padStart(2, "0") ? "selected" : ""}>${App.parseDate(`2000-${String(i + 1).padStart(2, "0")}-01`).toLocaleDateString(undefined, { month: "long" })}</option>`).join("")}</select>
+          <select name="bday" aria-label="Birthday day"><option value="">Day</option>${Array.from({ length: 31 }, (_, i) => `<option value="${String(i + 1).padStart(2, "0")}" ${bd === String(i + 1).padStart(2, "0") ? "selected" : ""}>${i + 1}</option>`).join("")}</select>
+        </div>
+      </section>
+
+      <section class="card settings">
         <h2 class="card-kicker">${App.icon("image")} Import photos</h2>
         <p>Fill in past days by adding photos from your library. Each photo lands on the day it was taken.</p>
         <button type="button" class="btn ghost" data-a="import">${App.icon("image")} Import photos by date</button>
@@ -101,6 +135,53 @@
     if (delaySel) delaySel.onchange = () => App.lock.setDelay(Number(delaySel.value));
     root.querySelector('[name="autoloc"]').onchange = ev => App.lsSet("daymark.autoLocation", ev.target.checked);
     on("import", () => App.openImport());
+
+    // ---- smart search settings ----
+    const saveSettings = patch => App.store.saveSettings({ ...(App.store.settings || {}), ...patch });
+    root.querySelectorAll("[data-edit-person]").forEach(b => { b.onclick = () => editItem("person", Number(b.dataset.editPerson)); });
+    root.querySelectorAll("[data-edit-group]").forEach(b => { b.onclick = () => editItem("group", Number(b.dataset.editGroup)); });
+    on("add-person", () => editItem("person", -1));
+    on("add-group", () => editItem("group", -1));
+    const bmonth = root.querySelector('[name="bmonth"]'), bday = root.querySelector('[name="bday"]');
+    const saveBday = () => {
+      if (bmonth.value && bday.value) { saveSettings({ birthday: `${bmonth.value}-${bday.value}` }); App.toast("Birthday saved"); }
+      else if (!bmonth.value && !bday.value) saveSettings({ birthday: "" });
+    };
+    bmonth.onchange = saveBday; bday.onchange = saveBday;
+
+    function editItem(kind, index) {
+      const key = kind === "person" ? "people" : "groups";
+      const listKey = kind === "person" ? "aliases" : "words";
+      const list = [...((App.store.settings || {})[key] || [])];
+      const item = index >= 0 ? list[index] : { name: "", [listKey]: [] };
+      const sheet = App.sheet({
+        title: index >= 0 ? `Edit ${kind}` : kind === "person" ? "Add person" : "Add word group",
+        html: `
+          <form class="item-form">
+            <label class="field"><span>${kind === "person" ? "Name" : "Word"}</span><input name="name" value="${App.escapeHtml(item.name)}" placeholder="${kind === "person" ? "James Agan" : "pickleball"}" autocapitalize="words" required></label>
+            <label class="field"><span>${kind === "person" ? "Also known as" : "Also means"}</span><textarea name="alts" rows="3" placeholder="${kind === "person" ? "James, Jimmy, my roommate" : "pb, pickle"}">${App.escapeHtml((item[listKey] || []).join(", "))}</textarea></label>
+            <p class="muted small">Separate with commas.</p>
+            <div class="btn-row">
+              ${index >= 0 ? `<button type="button" class="btn ghost danger-text" data-a="del">${App.icon("trash")} Delete</button>` : ""}
+              <button type="submit" class="btn primary">${App.icon("check")} Save</button>
+            </div>
+          </form>`
+      });
+      const form = sheet.body.querySelector("form");
+      form.onsubmit = ev => {
+        ev.preventDefault();
+        const name = form.elements.name.value.trim();
+        if (!name) return;
+        const alts = form.elements.alts.value.split(/[,\n]/).map(x => x.trim()).filter(Boolean);
+        const next = { name, [listKey]: [...new Set(alts)] };
+        if (index >= 0) list[index] = next; else list.push(next);
+        list.sort((a, b) => a.name.localeCompare(b.name));
+        saveSettings({ [key]: list });
+        sheet.close(true);
+      };
+      const del = sheet.body.querySelector('[data-a="del"]');
+      if (del) del.onclick = () => { list.splice(index, 1); saveSettings({ [key]: list }); sheet.close(true); };
+    }
 
     const status = root.querySelector(".backup-status");
     const busy = on => root.querySelectorAll('[data-a^="backup"], [data-a="restore"]').forEach(b => { b.disabled = on; });

@@ -17,6 +17,9 @@
   const entries = new Map();
   let byDate = new Map();
   let backend = null;
+  let vocabCache = null;
+  // Search settings: { people: [{ name, aliases }], groups: [{ name, words }], birthday: "MM-DD" }
+  let settings = {};
 
   function sortDay(list) {
     return list.sort((a, b) => {
@@ -33,6 +36,7 @@
       byDate.get(e.date).push(e);
     }
     byDate.forEach(sortDay);
+    vocabCache = null;
     App.emit("data");
   }
 
@@ -71,6 +75,7 @@
     return {
       mode: "local",
       async init() {
+        settings = App.lsGet("daymark.settings", {}) || {};
         db = await openIdb();
         replaceAll((await idbReq(db, "entries", "readonly", s => s.getAll())) || []);
       },
@@ -98,6 +103,7 @@
         urls.set(key, u);
         return u;
       },
+      async saveSettings(s) { App.lsSet("daymark.settings", s); },
       async signOut() {},
       async eraseAll() {
         await idbReq(db, "entries", "readwrite", s => s.clear());
@@ -112,12 +118,15 @@
     const fs = firebase.firestore();
     const col = fs.collection("users").doc(user.uid).collection("entries");
     const bucket = firebase.storage().ref().child(`users/${user.uid}/photos`);
+    const settingsDoc = fs.collection("users").doc(user.uid).collection("meta").doc("settings");
     let unsub = null;
+    let unsubSettings = null;
     const putOpts = { contentType: "image/jpeg", cacheControl: "private, max-age=31536000" };
     return {
       mode: "cloud",
       user,
       init() {
+        unsubSettings = settingsDoc.onSnapshot(doc => { settings = (doc.exists && doc.data()) || {}; App.emit("settings"); }, err => console.error(err));
         return new Promise(resolve => {
           unsub = col.onSnapshot(snap => {
             replaceAll(snap.docs.map(d => d.data()));
@@ -161,7 +170,11 @@
         return (thumb ? p.thumbUrl : p.url) || null;
       },
       async photoSrc(photo, thumb) { return this.photoSrcSync(photo, thumb) || ""; },
-      async signOut() { if (unsub) unsub(); unsub = null; replaceAll([]); },
+      saveSettings(s) {
+        settingsDoc.set(clean(s)).catch(err => App.toast("Couldn't sync settings: " + err.message, { type: "error" }));
+        return Promise.resolve();
+      },
+      async signOut() { if (unsub) unsub(); if (unsubSettings) unsubSettings(); unsub = unsubSettings = null; settings = {}; replaceAll([]); },
       async eraseAll() { throw new Error("Not supported for cloud journals."); }
     };
   }
@@ -175,6 +188,25 @@
   const store = {
     get mode() { return backend && backend.mode; },
     get user() { return backend && backend.user; },
+    get settings() { return settings; },
+    async saveSettings(s) {
+      settings = clean(s);
+      App.emit("settings");
+      await backend.saveSettings(settings);
+    },
+
+    // Every distinct word in the journal (for typo fixing in search).
+    vocab() {
+      if (!vocabCache) {
+        const words = new Set();
+        for (const e of entries.values()) {
+          const text = [e.text, (e.tags || []).join(" "), e.location && e.location.label].filter(Boolean).join(" ");
+          App.searchText(text).split(" ").forEach(w => { if (w.length > 1) words.add(w); });
+        }
+        vocabCache = [...words];
+      }
+      return vocabCache;
+    },
 
     async start(user) {
       backend = user ? cloudBackend(user) : localBackend();

@@ -101,6 +101,7 @@
     }
     const doc = {
       app: "daymark", version: 1, exportedAt: new Date().toISOString(), includesPhotos: !!withPhotos,
+      settings: App.store.settings || {},
       entries: entries.map(e => ({ ...e, photos: (e.photos || []).map(({ url, thumbUrl, ...rest }) => rest) }))
     };
     files.unshift({ name: "daymark.json", data: new TextEncoder().encode(JSON.stringify(doc, null, 1)) });
@@ -127,6 +128,20 @@
     if (!json) throw new Error("This doesn't look like a Daymark backup.");
     const doc = JSON.parse(new TextDecoder().decode(json));
     if (doc.app !== "daymark" || !Array.isArray(doc.entries)) throw new Error("This doesn't look like a Daymark backup.");
+    // Search settings: add people and word groups you don't already have.
+    if (doc.settings) {
+      const cur = App.store.settings || {};
+      const merge = (mine, theirs) => {
+        const names = new Set((mine || []).map(x => App.norm(x.name)));
+        return [...(mine || []), ...(theirs || []).filter(x => !names.has(App.norm(x.name)))];
+      };
+      await App.store.saveSettings({
+        ...cur,
+        people: merge(cur.people, doc.settings.people),
+        groups: merge(cur.groups, doc.settings.groups),
+        birthday: cur.birthday || doc.settings.birthday || ""
+      });
+    }
     let added = 0, skipped = 0, done = 0;
     for (const e of doc.entries) {
       onProgress && onProgress(++done, doc.entries.length);

@@ -12,36 +12,44 @@
     App.go("#/search");
   };
 
-  // The typed text, read as plain English (dates, "highlights", filler words).
-  const parsed = () => App.parseQuery(state.q);
+  // The typed text, read as plain English: dates, question type, people,
+  // word groups and typo fixes (see query.js).
+  const parsed = () => App.parseQuery(state.q, App.todayStr(), { settings: App.store.settings, vocab: App.store.vocab() });
   const active = () => !!(state.q.trim() || state.tags.size || state.starred || state.from || state.to);
+  const hay = e => App.searchText([e.text, (e.tags || []).join(" "), e.location && e.location.label].filter(Boolean).join(" "));
+  const newestFirst = (a, b) => (a.date === b.date ? String(b.time || "").localeCompare(String(a.time || "")) : a.date < b.date ? 1 : -1);
 
-  function haystack(e) {
-    return App.norm([e.text, (e.tags || []).join(" "), e.location && e.location.label].filter(Boolean).join(" \n "));
+  // Everything except the words: dates in the question, highlights, the
+  // date and tag filters under the search box.
+  function inScope(e, p) {
+    if ((state.starred || p.starred) && !e.starred) return false;
+    if (state.from && e.date < state.from) return false;
+    if (state.to && e.date > state.to) return false;
+    if (!p.test(e.date)) return false;
+    if (state.tags.size) {
+      const have = new Set((e.tags || []).map(App.norm));
+      for (const t of state.tags) if (!have.has(t)) return false;
+    }
+    return true;
   }
 
-  function results() {
-    const p = parsed();
-    const ts = p.terms;
-    return App.store.all().filter(e => {
-      if ((state.starred || p.starred) && !e.starred) return false;
-      if (state.from && e.date < state.from) return false;
-      if (state.to && e.date > state.to) return false;
-      if (p.from && e.date < p.from) return false;
-      if (p.to && e.date > p.to) return false;
-      if (p.monthDay && e.date.slice(5) !== p.monthDay) return false;
-      if (p.month && e.date.slice(5, 7) !== p.month) return false;
-      if (state.tags.size) {
-        const have = new Set((e.tags || []).map(App.norm));
-        for (const t of state.tags) if (!have.has(t)) return false;
-      }
-      if (ts.length) {
-        const h = haystack(e);
-        for (const t of ts) if (!h.includes(t)) return false;
-      }
-      return true;
-    }).sort((a, b) => (a.date === b.date ? String(b.time || "").localeCompare(String(a.time || "")) : a.date < b.date ? 1 : -1));
+  // → { exact, closest, pool }. When nothing matches every part of the
+  // question, "closest" holds the best partial matches instead.
+  function search(p) {
+    const pool = App.store.all().filter(e => inScope(e, p)).sort(newestFirst);
+    if (!p.groups.length && p.dropped.length) return { exact: [], closest: [], pool };
+    const scored = pool.map(e => { const h = hay(e); return { e, n: p.groups.filter(g => App.groupMatches(h, g)).length }; });
+    const exact = scored.filter(x => x.n === p.groups.length).map(x => x.e);
+    let closest = [];
+    if (!exact.length && p.groups.length) {
+      const min = p.hasDate || state.from || state.to ? 0 : 1;
+      closest = scored.filter(x => x.n >= min).sort((a, b) => b.n - a.n || newestFirst(a.e, b.e)).slice(0, 30).map(x => x.e);
+    }
+    return { exact, closest, pool };
   }
+
+  // Words to highlight in results.
+  const highlightTerms = p => p.groups.flatMap(g => g.alts).filter(a => a.length >= 3);
 
   // A window of text around the first matching word.
   function around(text, ts, len) {
@@ -49,7 +57,7 @@
     if (t.length <= len) return t;
     const n = App.norm(t);
     let at = -1;
-    for (const term of ts) { const i = n.indexOf(term); if (i >= 0 && (at < 0 || i < at)) at = i; }
+    for (const term of ts) { const i = n.indexOf(App.norm(term)); if (i >= 0 && (at < 0 || i < at)) at = i; }
     if (at < 0) return t.slice(0, len).replace(/\s\S*$/, "") + "…";
     const start = Math.max(0, at - Math.floor(len / 3));
     let s = t.slice(start, start + len);
@@ -70,15 +78,51 @@
     const y = Math.floor(months / 12), m = months % 12;
     return `${App.plural(y, "year")}${m ? `, ${App.plural(m, "month")}` : ""} ago`;
   }
+  const cap = s => s.replace(/^./, c => c.toUpperCase());
 
-  // The short answer shown above the results for "when did I last…",
-  // "first time I…" and "how many times…" questions.
-  function answerCard(p, all) {
+  // Short day labels: weekdays for a recent week ("Sat, Sun"), otherwise
+  // dates ("Jun 5, Jul 4").
+  function dayLabels(dates) {
+    const sorted = [...new Set(dates)].sort();
+    const days = d => (App.parseDate(App.todayStr()) - App.parseDate(d)) / 86400000;
+    const weekdays = days(sorted[0]) <= 13 && days(sorted[0]) - days(sorted[sorted.length - 1]) < 7;
+    return sorted.map(d => App.parseDate(d).toLocaleDateString(undefined, weekdays ? { weekday: "short" } : { month: "short", day: "numeric" })).join(", ");
+  }
+
+  // The short answer shown above the results.
+  function answerCard(p, exact, pool) {
     if (!p.ask) return "";
-    const subject = p.terms.length ? `“${App.escapeHtml(p.terms.join(" "))}”` : "this";
+    const subject = p.groups.length ? p.groups.map(g => `“${App.escapeHtml(g.label)}”`).join(" + ") : p.dropped.length ? `“${App.escapeHtml(p.dropped.join(" "))}”` : "this";
     const scope = p.when ? ` (${App.escapeHtml(p.when)})` : "";
-    if (!all.length) return `<div class="answer none"><p>Nothing in your journal mentions ${subject}${scope} yet.</p></div>`;
-    const days = [...new Set(all.map(e => e.date))].sort();
+    const open = `<span class="answer-open">Open that day ${App.icon("next")}</span>`;
+
+    if (p.ask === "who" || p.ask === "where") {
+      const list = p.groups.length ? exact : pool;
+      const found = new Map(); // name → dates
+      const add = (name, d) => { if (!found.has(name)) found.set(name, []); found.get(name).push(d); };
+      const people = (App.store.settings.people || []).map(x => ({ label: x.name, kind: "person", alts: [x.name, ...(x.aliases || [])] }));
+      for (const e of list) {
+        if (p.ask === "where") { if (e.location && e.location.label) add(e.location.label, e.date); continue; }
+        const h = hay(e);
+        if (people.length) people.forEach(g => { if (App.groupMatches(h, g)) add(g.label, e.date); });
+        else (e.tags || []).forEach(t => add(t, e.date));
+      }
+      const what = p.ask === "who" ? "People" : "Places";
+      if (!found.size) {
+        return `<div class="answer none"><p>${p.ask === "who"
+          ? (people.length ? `No one from your People list comes up${scope}.` : `Add people in <a href="#/settings">Settings → Smart search</a> so I can recognize names. Until then, here's what you wrote${scope}.`)
+          : `No saved locations${scope}. Here's what you wrote.`}</p></div>`;
+      }
+      const rows = [...found.entries()].sort((a, b) => b[1].length - a[1].length);
+      return `
+        <div class="answer">
+          <div class="answer-kicker">${what}${scope}</div>
+          <ul class="answer-list">${rows.slice(0, 12).map(([name, ds]) => `<li><strong>${App.escapeHtml(name)}</strong><span>${App.escapeHtml(dayLabels(ds))}</span></li>`).join("")}</ul>
+        </div>`;
+    }
+
+    if (!exact.length) return `<div class="answer none"><p>Nothing in your journal mentions ${subject}${scope} yet.</p></div>`;
+    const days = [...new Set(exact.map(e => e.date))].sort();
     const last = days[days.length - 1];
     if (p.ask === "count") {
       return `
@@ -88,14 +132,40 @@
           <p>Days with an entry mentioning ${subject}. Most recently <a href="#/day/${last}">${App.escapeHtml(App.fmtDayMed(last))}</a>, ${ago(last)}.</p>
         </div>`;
     }
+    if (p.ask === "since") {
+      return `
+        <a class="answer" href="#/day/${last}">
+          <div class="answer-kicker">Since ${subject}${scope}</div>
+          <div class="answer-big">${cap(ago(last))}</div>
+          <p>On ${App.escapeHtml(App.fmtDayLong(last))}${open}</p>
+        </a>`;
+    }
+    if (p.ask === "read") {
+      return `
+        <div class="answer">
+          <div class="answer-kicker">What you wrote${scope}</div>
+          <div class="answer-big">${App.plural(exact.length, "entry", "entries")}</div>
+          <p>About ${subject}${days.length !== exact.length ? ` on ${App.plural(days.length, "day")}` : ""}. Read them below.</p>
+        </div>`;
+    }
     const d = p.ask === "first" ? days[0] : last;
     return `
       <a class="answer" href="#/day/${d}">
         <div class="answer-kicker">${p.ask === "first" ? "First time" : "Last time"}${scope}</div>
         <div class="answer-big">${App.escapeHtml(App.fmtDayLong(d))}</div>
-        <p>${ago(d).replace(/^./, c => c.toUpperCase())}${days.length > 1 ? ` · mentioned on ${days.length} days in all` : ""} <span class="answer-open">Open that day ${App.icon("next")}</span></p>
+        <p>${cap(ago(d))}${days.length > 1 ? ` · mentioned on ${days.length} days in all` : ""}${open}</p>
       </a>`;
   }
+
+  // Tappable examples shown before you type.
+  const EXAMPLES = [
+    ["Last weekend", "what did I do last weekend"],
+    ["When did I last see…", "when did I last see "],
+    ["Who did I see this week?", "who did I see this week"],
+    ["Workouts this month", "how many times did I work out this month"],
+    ["This month's highlights", "highlights this month"],
+    ["A year ago today", "a year ago today"]
+  ];
 
   function dateLabel() {
     if (!state.from && !state.to) return "Any time";
@@ -168,24 +238,48 @@
     if (!active()) {
       const recent = App.store.all().filter(e => e.starred).sort((a, b) => (a.date < b.date ? 1 : -1)).slice(0, 10);
       box.innerHTML = `
-        <p class="muted small">Search a word, person or place, like <em>dentist</em> or <em>Sam</em>, or ask in plain English: <em>what did I do on Oct 14</em>, <em>when did I last see Sam</em>, <em>how many times did I go to the gym last year</em>. Tap a tag above to see every entry with it.</p>
+        <div class="examples">${EXAMPLES.map(([label, q], i) => `<button type="button" class="chip" data-ex="${i}">${App.escapeHtml(label)}</button>`).join("")}</div>
+        <p class="muted small">Search a word, person or place, or ask in plain English, like <em>when did I last see James?</em>, <em>what did I do last Sunday?</em> or <em>how many times did I work out this year?</em> Teach it nicknames in <a href="#/settings">Settings → Smart search</a>.</p>
         ${recent.length ? `<h2 class="section-title">${App.icon("star")} Recent highlights</h2><div class="entries">${recent.map(e => App.entryCard({ ...e, text: App.snippet(e, 200) }, { showDate: true })).join("")}</div>` : ""}`;
       App.bindEntries(box);
+      box.querySelectorAll("[data-ex]").forEach(b => {
+        b.onclick = () => {
+          const q = EXAMPLES[Number(b.dataset.ex)][1];
+          const input = root.querySelector(".search-box input");
+          state.q = q; input.value = q; state.limit = 50;
+          if (q.endsWith(" ")) { input.focus(); input.setSelectionRange(q.length, q.length); return; }
+          paintResults(root); paintChips(root);
+        };
+      });
       return;
     }
     const p = parsed();
-    const ts = p.terms;
-    const all = results();
-    const shown = all.slice(0, state.limit);
-    // Say how a question was read, e.g. "October 14 · every year · “sam”".
-    const readAs = [p.when, p.starred ? "highlights" : "", ts.length ? `“${ts.join(" ")}”` : ""].filter(Boolean);
-    const showReadAs = state.q.trim() && (p.when || p.starred || ts.join(" ") !== App.norm(state.q).trim().replace(/\s+/g, " "));
+    const { exact, closest, pool } = search(p);
+    const showing = exact.length ? exact : closest;
+    const shown = showing.slice(0, state.limit);
+    const hl = highlightTerms(p);
+    // How the question was read, e.g. "October 14 · every year · “James Agan”".
+    const readAs = [p.when, p.starred ? "highlights" : "", ...p.groups.map(g => `“${g.label}”`)].filter(Boolean);
+    const plain = p.groups.length === 1 && p.groups[0].kind === "word" && !p.when && !p.starred && App.norm(state.q).trim() === p.groups[0].label;
+    const notes = [
+      ...p.corrected.map(c => `Searched for “${App.escapeHtml(c.to)}” instead of “${App.escapeHtml(c.from)}”.`),
+      ...(p.dropped.length && p.groups.length ? [`Left out ${p.dropped.map(w => `“${App.escapeHtml(w)}”`).join(", ")}, which isn't in your journal.`] : [])
+    ];
+    let count;
+    if (exact.length) count = App.plural(exact.length, "entry", "entries") + (new Set(exact.map(e => e.date)).size !== exact.length ? ` on ${App.plural(new Set(exact.map(e => e.date)).size, "day")}` : "");
+    else if (closest.length) count = p.hasDate || state.from || state.to
+      ? `Nothing mentions ${p.groups.map(g => `“${App.escapeHtml(g.label)}”`).join(" + ")} then. Here's everything from ${App.escapeHtml(p.when || "those dates")}:`
+      : "No entry matches everything. Closest matches:";
+    else if (!p.groups.length && p.dropped.length) count = `Nothing in your journal mentions ${p.dropped.map(w => `“${App.escapeHtml(w)}”`).join(", ")}.`;
+    else count = "No matches. Try fewer or different words.";
+    const answer = answerCard(p, exact, pool);
     box.innerHTML = `
-      ${showReadAs ? `<p class="read-as">${App.icon("search")}<span>Showing <strong>${readAs.map(App.escapeHtml).join(" · ") || "everything"}</strong></span></p>` : ""}
-      ${answerCard(p, all)}
-      <p class="result-count">${all.length ? App.plural(all.length, "entry", "entries") + (new Set(all.map(e => e.date)).size !== all.length ? ` on ${App.plural(new Set(all.map(e => e.date)).size, "day")}` : "") : "No matches. Try fewer or different words."}</p>
-      <div class="entries">${shown.map(e => App.entryCard({ ...e, text: around(e.text, ts, 220) }, { showDate: true, terms: ts, maxPhotos: 4 })).join("")}</div>
-      ${all.length > shown.length ? `<div class="center"><button type="button" class="btn ghost" data-a="more">Show more</button></div>` : ""}
+      ${state.q.trim() && !plain && readAs.length ? `<p class="read-as">${App.icon("search")}<span>Showing <strong>${readAs.map(App.escapeHtml).join(" · ")}</strong></span></p>` : ""}
+      ${notes.length ? `<p class="search-note">${notes.join(" ")}</p>` : ""}
+      ${answer}
+      <p class="result-count">${count}</p>
+      <div class="entries">${shown.map(e => App.entryCard({ ...e, text: around(e.text, hl, 220) }, { showDate: true, terms: hl, maxPhotos: 4 })).join("")}</div>
+      ${showing.length > shown.length ? `<div class="center"><button type="button" class="btn ghost" data-a="more">Show more</button></div>` : ""}
     `;
     App.bindEntries(box);
     const more = box.querySelector('[data-a="more"]');

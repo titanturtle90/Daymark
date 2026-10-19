@@ -477,3 +477,27 @@ mark { background: var(--gold-soft); color: inherit; border-radius: 3px; padding
 .answer-open { display: flex; align-items: center; gap: 2px; margin-top: 8px; color: var(--accent); font-weight: 600; white-space: nowrap; }
 .answer-open .ic { width: 15px; height: 15px; }
 .answer.none { border-left-color: var(--line-strong); box-shadow: none; }
+
+/* ---------- smart search settings ---------- */
+.set-sub { font-size: 18px; margin: 18px 0 2px; }
+.set-list { display: flex; flex-direction: column; gap: 6px; margin: 8px 0 10px; }
+.set-row { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 10px; width: 100%; text-align: left; padding: 10px 12px; border-radius: 12px; border: 1px solid var(--line); background: var(--card-2); font-size: 15.5px; }
+.set-row span { color: var(--ink-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.set-row .ic { width: 16px; height: 16px; color: var(--ink-3); }
+.empty-row { margin: 0 !important; }
+.builtin { margin-top: 12px; font-size: 14px; color: var(--ink-2); }
+.builtin summary { cursor: pointer; font-weight: 600; color: var(--accent); padding: 4px 0; }
+.builtin p { margin: 6px 0 !important; font-size: 14px; }
+.bday-row { display: grid; grid-template-columns: 1.4fr 1fr; gap: 10px; }
+.bday-row select, .item-form textarea { min-height: 46px; padding: 8px 12px; border-radius: 12px; border: 1px solid var(--line-strong); background: var(--card); font-size: 16px; width: 100%; color: var(--ink); }
+.item-form { display: flex; flex-direction: column; gap: 12px; }
+.item-form textarea { resize: vertical; text-transform: none; letter-spacing: 0; font-weight: 400; }
+
+.search-note { margin: 6px 2px 0; font-size: 14px; color: var(--ink-3); }
+.answer-list { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.answer-list li { display: flex; justify-content: space-between; gap: 12px; font-size: 16px; }
+.answer-list strong { font-family: var(--font-head); font-weight: 600; }
+.answer-list span { color: var(--ink-3); font-size: 14.5px; text-align: right; }
+.answer.none a { color: var(--accent); font-weight: 600; }
+.examples { display: flex; flex-wrap: wrap; gap: 8px; margin: 4px 0 12px; }
+.examples .chip { font-size: 14.5px; }

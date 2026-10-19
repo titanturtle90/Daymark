@@ -85,6 +85,7 @@
   // ---------- wiring ----------
   App.on("signout", signOut);
   App.on("data", () => { if (!$("app").hidden) App.refresh(); });
+  App.on("settings", () => { if (!$("app").hidden) App.refresh(); });
   App.on("store-error", err => {
     const msg = err && err.code === "permission-denied"
       ? "Daymark isn't allowed to read your journal. Check the Firestore rules (see README)."
