@@ -1,10 +1,10 @@
-const CACHE_NAME = "daymark-v10";
+const CACHE_NAME = "daymark-v11";
 const PRECACHE_URLS = [
   "./index.html", "./manifest.json", "./icon-192.png", "./icon-512.png", "./apple-touch-icon.png",
-  "./css/app.css?v=8",
+  "./css/app.css?v=9",
   "./js/config.js?v=2", "./js/core.js?v=2", "./js/photos.js?v=1", "./js/store.js?v=2", "./js/lock.js?v=1",
-  "./js/editor.js?v=2", "./js/calendar.js?v=2", "./js/day.js?v=2", "./js/query.js?v=3", "./js/search.js?v=4", "./js/onthisday.js?v=1",
-  "./js/backup.js?v=2", "./js/import.js?v=1", "./js/settings.js?v=2", "./js/app.js?v=2"
+  "./js/editor.js?v=3", "./js/calendar.js?v=2", "./js/day.js?v=2", "./js/query.js?v=4", "./js/search.js?v=5", "./js/onthisday.js?v=1",
+  "./js/backup.js?v=2", "./js/import.js?v=1", "./js/settings.js?v=3", "./js/app.js?v=2"
 ];
 
 self.addEventListener("install", event => {

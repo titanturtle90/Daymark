@@ -14,7 +14,12 @@
  *  - corrected: typos fixed against words in the journal ("oreleans" → "orleans")
  *  - dropped: words that appear nowhere in the journal, left out of the search
  *  - ask: the kind of answer wanted: last, first, count, since, who, where,
+ *    duration ("how long was my trip"), streak, gap ("longest without"),
+ *    without ("days I didn't…"), compare ("more this month than last"),
  *    read ("what did I think of…"), or "" for a plain search
+ *  - periods: for compare, the two periods [{ label, test }]
+ *  - alternatives: other readings of a date given without a year, as
+ *    [{ label, q }] (q is the question to run instead)
  */
 (function (App) {
   "use strict";
@@ -32,6 +37,15 @@
     { name: "beach", words: ["beach", "ocean", "shore", "sandbar"] },
     { name: "church", words: ["church", "mass", "sermon", "bible study"] },
     { name: "mental health & feelings", words: ["mental health", "anxious", "anxiety", "worried", "worry", "worrying", "worries", "stress", "stressed", "stressful", "overwhelmed", "depressed", "depression", "sad", "nervous", "panic", "therapy", "therapist", "counselor", "mood", "upset", "burnt out", "burned out", "burnout", "lonely", "frustrated", "angry", "cried", "crying", "overthinking"] },
+    { name: "happy", words: ["happy", "happiest", "excited", "exciting", "great day", "good day", "best day", "perfect day", "fun", "amazing", "awesome", "grateful", "thankful", "proud", "blessed", "loved it", "joy", "joyful"] },
+    // "more" words are found by the group but don't trigger it, so "sushi" still means just sushi.
+    { name: "food", words: ["food", "ate", "eat", "eating", "lunch", "breakfast", "brunch", "meal", "cooked", "cooking", "snack"], more: ["sushi", "tacos", "pizza", "burger", "bbq", "barbecue", "restaurant", "dinner", "cafe", "steak", "wings"] },
+    { name: "shopping", words: ["bought", "buy", "buying", "purchased", "purchase", "ordered", "amazon", "shopping", "paid for"] },
+    { name: "car service", words: ["oil change", "mechanic", "car service", "car serviced", "tires", "tire", "car wash", "dealership"] },
+    { name: "work", words: ["work", "office", "meeting", "boss", "coworker", "shift", "client", "project", "deadline"] },
+    { name: "school", words: ["class", "lecture", "exam", "homework", "professor", "campus", "studied", "studying", "assignment", "midterm", "final exam"] },
+    { name: "sick", words: ["sick", "cold", "flu", "fever", "covid", "migraine", "headache", "sore throat", "ill", "nausea", "sinus"] },
+    { name: "sleep", words: ["sleep", "slept", "insomnia", "nap", "napped", "tired", "exhausted", "rested", "woke up"] },
     { name: "New Orleans", words: ["new orleans", "nola"] },
     { name: "West Palm", words: ["west palm", "west palm beach", "wpb"] },
     { name: "St. Pete", words: ["st pete", "st petersburg", "saint petersburg", "saint pete"] },
@@ -47,7 +61,9 @@
     "happened happen happening list all everything around ago and or by it its you your can could would please remind " +
     "again us we our anything something which moments moment memories memory may hung hang hanging hangout out spend " +
     "spent visit visited visiting most recent recently latest first earliest often number count since long think thought " +
-    "thoughts feel felt opinion really very so just also too kind sort lot lots like trip").split(" "));
+    "thoughts feel felt opinion really very so just also too kind sort lot lots like trip didnt havent without not " +
+    "every streak row straight consecutive longest gap stretch more less fewer than vs versus compared or was were " +
+    "longer period go goes going").split(" "));
   const STARRED = /\b(highlights?|best|favou?rites?|starred|memorable|top)\b/g;
 
   const MONTHS = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
@@ -87,7 +103,7 @@
     }
     return group.res;
   }
-  App.groupMatches = (hay, group) => groupRegexes(group).some(re => re.test(hay));
+  App.groupMatches = (hay, group) => (group.parts ? group.parts.some(g => App.groupMatches(hay, g)) : groupRegexes(group).some(re => re.test(hay)));
 
   // Typo distance (optimal string alignment).
   function distance(a, b) {
@@ -138,36 +154,47 @@
     { re: "fathers day", name: "Father's Day", on: y => nthWeekday(y, 6, 0, 3) }
   ];
 
-  // ---------- the parser ----------
-  function parse(q, today, ctx) {
-    today = today || App.todayStr();
-    ctx = ctx || {};
-    const settings = ctx.settings || {};
+  // ---------- dates ----------
+  // Reads the date words in s. Returns { s (with them taken out), tests,
+  // when, range (the last exact range, for comparisons), alternatives }.
+  // A date with no year ("christmas", "oct 14", "in march", "summer") means
+  // the most recent one, with alternatives offered for other years, unless
+  // the question also names a year or says "every year".
+  function parseDates(s, today, settings, q) {
     const ty = Number(today.slice(0, 4));
     const tests = [];
     const when = [];
-    const out = { groups: [], dropped: [], corrected: [], starred: false, ask: "" };
+    const res = { tests, when, range: null, alternatives: [] };
+    const everyYear = /\bevery year\b|\ball years\b|\bany year\b/.test(s) || /\b(?:19|20)\d{2}\b/.test(s);
+    s = s.replace(/\b(every year|all years|any year)\b/g, " ");
 
-    let s = " " + String(q || "").toLowerCase().replace(/[’']/g, "").replace(/[?!"“”,;:()]/g, " ").replace(/\s+/g, " ") + " ";
-
-    // Each rule takes its first match out of the text so later rules don't
-    // see it again ("last week" is a date, not the word "last").
     const take = (re, fn) => {
       const m = re.exec(s);
       if (m && fn(m) !== false) s = s.slice(0, m.index) + " " + s.slice(m.index + m[0].length);
     };
     const onDay = (d, label) => { tests.push(x => x === d); when.push(label || App.fmtDayLong(d)); };
-    const between = (from, to, label) => { tests.push(x => x >= from && x <= to); when.push(label); };
+    const between = (from, to, label, unit) => { tests.push(x => x >= from && x <= to); when.push(label); res.range = { from, to, unit, label }; };
     const monthOf = (d, n) => { const t = App.parseDate(d); t.setMonth(t.getMonth() + n); return App.toDateStr(t); };
+    const monthRange = (y, mo) => [ymd(y, mo, 1), ymd(y, mo, lastDay(y, mo))];
+    // Offer the two years before and "every year" for a date given without a year.
+    const offer = (name, year) => {
+      if (res.alternatives.length) return;
+      res.alternatives = [year - 1, year - 2].map(y => ({ label: `${name} ${y}`, q: `${q} ${y}` }))
+        .concat([{ label: `Every ${name}`, q: `${q} every year` }]);
+    };
 
     // 2025-10-14 · 10/14 · 10/14/25
     take(/\b(\d{4})-(\d{1,2})-(\d{1,2})\b/, m => (validDay(+m[2], +m[3]) ? onDay(ymd(+m[1], +m[2], +m[3])) : false));
-    take(/\b(\d{1,2})\/(\d{1,2})(?:\/(\d{2}|\d{4}))?\b/, m => {
-      const mo = +m[1], d = +m[2];
+    const monthDayYear = (mo, d, y) => {
       if (!validDay(mo, d)) return false;
-      if (m[3]) return onDay(ymd(m[3].length === 2 ? 2000 + +m[3] : +m[3], mo, d));
-      tests.push(x => x.slice(5) === `${pad(mo)}-${pad(d)}`); when.push(`${monthName(mo)} ${d} · every year`);
-    });
+      if (y) return onDay(ymd(+y, mo, d));
+      const md = `${pad(mo)}-${pad(d)}`;
+      if (everyYear) { tests.push(x => x.slice(5) === md); when.push(`${monthName(mo)} ${d} · every year`); return; }
+      const yr = `${ty}-${md}` <= today ? ty : ty - 1;
+      onDay(ymd(yr, mo, d));
+      offer(`${monthName(mo)} ${d}`, yr);
+    };
+    take(/\b(\d{1,2})\/(\d{1,2})(?:\/(\d{2}|\d{4}))?\b/, m => monthDayYear(+m[1], +m[2], m[3] && (m[3].length === 2 ? 2000 + +m[3] : +m[3])));
 
     // in the past 6 months · last 2 weeks
     take(new RegExp(`\\b(?:in |over )?(?:the )?(?:past|last) ${NUM_RE} (day|week|month|year)s?\\b`), m => {
@@ -182,20 +209,15 @@
       if (m[2] === "day") return onDay(App.addDays(today, -n));
       if (m[2] === "week") {
         const d = App.addDays(today, -7 * n), start = App.addDays(d, -weekday(d));
-        return between(start, App.addDays(start, 6), `Week of ${shortDay(start)}`);
+        return between(start, App.addDays(start, 6), `Week of ${shortDay(start)}`, "week");
       }
       const d = monthOf(today, -(m[2] === "year" ? 12 * n : n));
       if (exact) return onDay(d);
-      const y = +d.slice(0, 4), mo = +d.slice(5, 7);
-      between(ymd(y, mo, 1), ymd(y, mo, lastDay(y, mo)), App.fmtMonth(d.slice(0, 7)));
+      const [a, b] = monthRange(+d.slice(0, 4), +d.slice(5, 7));
+      between(a, b, App.fmtMonth(d.slice(0, 7)), "month");
     });
 
     // october 14th, 2025 · oct 14 · 14 oct 2025 · 14th of october
-    const monthDayYear = (mo, d, y) => {
-      if (!validDay(mo, d)) return false;
-      if (y) return onDay(ymd(+y, mo, d));
-      tests.push(x => x.slice(5) === `${pad(mo)}-${pad(d)}`); when.push(`${monthName(mo)} ${d} · every year`);
-    };
     take(new RegExp(`\\b${MONTH_RE} ${DAY_RE}\\b(?: ${YEAR_RE}\\b)?`), m => monthDayYear(monthNum(m[1]), +m[2], m[3]));
     take(new RegExp(`\\b${DAY_RE} (?:of )?${MONTH_RE}\\b(?: ${YEAR_RE}\\b)?`), m => monthDayYear(monthNum(m[2]), +m[1], m[3]));
 
@@ -205,44 +227,45 @@
       holidays.push({ re: "(?:my )?birthday|bday", name: "your birthday", on: y => `${y}-${settings.birthday}` });
     }
     for (const h of holidays) {
-      take(new RegExp(`\\b(?:(this|last|next) )?(?:on |for |over )?(?:${h.re})\\b(?: (?:of )?${YEAR_RE}\\b)?`), m => {
+      take(new RegExp(`\\b(?:(this|last|next|every) )?(?:on |for |over )?(?:${h.re})\\b(?: (?:of )?${YEAR_RE}\\b)?`), m => {
         if (m[2]) return onDay(h.on(+m[2]), `${h.name} ${m[2]}`);
-        if (m[1] === "last") {
-          const d = h.on(ty) <= today ? h.on(ty) : h.on(ty - 1);
-          return onDay(d, `${h.name} ${d.slice(0, 4)}`);
-        }
         if (m[1] === "this") return onDay(h.on(ty), `${h.name} ${ty}`);
-        tests.push(x => x === h.on(+x.slice(0, 4)));
-        when.push(`${h.name} · every year`);
+        if (m[1] === "every" || (everyYear && m[1] !== "last")) {
+          tests.push(x => x === h.on(+x.slice(0, 4)));
+          when.push(`${h.name} · every year`);
+          return;
+        }
+        const d = h.on(ty) <= today ? h.on(ty) : h.on(ty - 1);
+        onDay(d, `${h.name} ${d.slice(0, 4)}`);
+        if (m[1] !== "last") offer(h.name, +d.slice(0, 4));
       });
     }
 
     // march 2024
     take(new RegExp(`\\b${MONTH_RE} (?:of )?${YEAR_RE}\\b`), m => {
       const mo = monthNum(m[1]), y = +m[2];
-      between(ymd(y, mo, 1), ymd(y, mo, lastDay(y, mo)), `${monthName(mo)} ${y}`);
+      const [a, b] = monthRange(y, mo);
+      between(a, b, `${monthName(mo)} ${y}`, "month");
     });
 
     // seasons, Florida-style: summer = Jun–Aug, winter = Dec–Feb
-    take(new RegExp(`\\b(?:(this|last|next|in|during|over|the) )?(spring|summer|fall|autumn|winter)\\b(?: (?:of )?${YEAR_RE}\\b)?`), m => {
+    take(new RegExp(`\\b(?:(this|last|next|in|during|over|the|every) )?(spring|summer|fall|autumn|winter)\\b(?: (?:of )?${YEAR_RE}\\b)?`), m => {
       const name = m[2] === "autumn" ? "fall" : m[2];
       if (name === "fall" && !m[1] && !m[3]) return false; // "I fall asleep"
       const months = SEASONS[name];
-      const range = y => {
-        if (name === "winter") return [ymd(y, 12, 1), ymd(y + 1, 2, lastDay(y + 1, 2))];
-        return [ymd(y, months[0], 1), ymd(y, months[2], lastDay(y, months[2]))];
-      };
-      const label = y => `${name[0].toUpperCase() + name.slice(1)} ${y}`;
-      let y = null;
-      if (m[3]) y = +m[3];
-      else if (m[1] === "this") y = name === "winter" && +today.slice(5, 7) <= 2 ? ty - 1 : ty;
-      else if (m[1] === "last") {
-        y = name === "winter" && +today.slice(5, 7) <= 2 ? ty - 1 : ty;
-        if (range(y)[1] >= today) y -= 1;
+      const range = y => (name === "winter" ? [ymd(y, 12, 1), ymd(y + 1, 2, lastDay(y + 1, 2))] : [ymd(y, months[0], 1), ymd(y, months[2], lastDay(y, months[2]))]);
+      const title = name[0].toUpperCase() + name.slice(1);
+      if (m[1] === "every" || (everyYear && !m[3] && m[1] !== "this" && m[1] !== "last")) {
+        tests.push(x => months.includes(+x.slice(5, 7)));
+        when.push(`${title} · every year`);
+        return;
       }
-      if (y != null) { const [a, b] = range(y); return between(a, b, label(y)); }
-      tests.push(x => months.includes(+x.slice(5, 7)));
-      when.push(`${name[0].toUpperCase() + name.slice(1)} · every year`);
+      let y = m[3] ? +m[3] : name === "winter" && +today.slice(5, 7) <= 2 ? ty - 1 : ty;
+      if (!m[3] && m[1] === "last" && range(y)[1] >= today) y -= 1;
+      if (!m[3] && m[1] !== "this" && m[1] !== "last" && range(y)[0] > today) y -= 1;
+      const [a, b] = range(y);
+      between(a, b, `${title} ${y}`, "season");
+      if (!m[3] && m[1] !== "this" && m[1] !== "last") offer(title, y);
     });
 
     // last sunday · on tuesday · sundays
@@ -261,7 +284,7 @@
       let sat;
       if (m[1] === "this") sat = wd === 0 ? App.addDays(today, -1) : App.addDays(today, 6 - wd);
       else sat = wd === 0 ? App.addDays(today, -8) : wd === 6 ? App.addDays(today, -7) : App.addDays(today, -wd - 1);
-      between(sat, App.addDays(sat, 1), m[1] === "this" ? "This weekend" : `Weekend of ${shortDay(sat)}`);
+      between(sat, App.addDays(sat, 1), m[1] === "this" ? "This weekend" : `Weekend of ${shortDay(sat)}`, "weekend");
     });
 
     take(/\b(today|tonight|this morning|this afternoon|this evening)\b/, () => onDay(today));
@@ -272,44 +295,107 @@
       const back = m[1] !== "this";
       if (m[2] === "week") {
         const start = App.addDays(today, -weekday(today) - (back ? 7 : 0));
-        return between(start, App.addDays(start, 6), back ? "Last week" : "This week");
+        return between(start, App.addDays(start, 6), back ? "Last week" : "This week", "week");
       }
       if (m[2] === "month") {
         const key = App.addMonths(today.slice(0, 7), back ? -1 : 0);
-        const y = +key.slice(0, 4), mo = +key.slice(5);
-        return between(`${key}-01`, ymd(y, mo, lastDay(y, mo)), App.fmtMonth(key));
+        const [a, b] = monthRange(+key.slice(0, 4), +key.slice(5));
+        return between(a, b, App.fmtMonth(key), "month");
       }
       const y = ty - (back ? 1 : 0);
-      between(`${y}-01-01`, `${y}-12-31`, String(y));
+      between(`${y}-01-01`, `${y}-12-31`, String(y), "year");
     });
 
-    // a month on its own: "in march" (every year). "may" only with in/on/during/of.
-    take(new RegExp(`(?:\\b(in|on|during|of|from) )?\\b${MONTH_RE}(?= )`), m => {
+    // a month on its own: "in march". "may" only with in/on/during/of.
+    take(new RegExp(`(?:\\b(in|on|during|of|from|every) )?\\b${MONTH_RE}(?= )`), m => {
       if (m[2].startsWith("may") && !m[1]) return false;
       const mo = monthNum(m[2]);
-      tests.push(x => +x.slice(5, 7) === mo); when.push(`${monthName(mo)} · every year`);
+      if (m[1] === "every" || everyYear) { tests.push(x => +x.slice(5, 7) === mo); when.push(`${monthName(mo)} · every year`); return; }
+      const y = mo <= +today.slice(5, 7) ? ty : ty - 1;
+      const [a, b] = monthRange(y, mo);
+      between(a, b, `${monthName(mo)} ${y}`, "month");
+      offer(monthName(mo), y);
     });
     // a year on its own: "in 2025"
-    take(new RegExp(`\\b${YEAR_RE}\\b`), m => between(`${m[1]}-01-01`, `${m[1]}-12-31`, m[1]));
+    take(new RegExp(`\\b${YEAR_RE}\\b`), m => between(`${m[1]}-01-01`, `${m[1]}-12-31`, m[1], "year"));
+
+    res.s = s;
+    res.test = d => tests.every(t => t(d));
+    return res;
+  }
+
+  // The period before a range, for "this month than last" comparisons.
+  function previousRange(r) {
+    if (!r) return null;
+    const shift = (d, unit) => {
+      if (unit === "week" || unit === "weekend") return App.addDays(d, -7);
+      const t = App.parseDate(d);
+      if (unit === "month") t.setMonth(t.getMonth() - 1);
+      else t.setFullYear(t.getFullYear() - 1);
+      return App.toDateStr(t);
+    };
+    if (!["week", "weekend", "month", "year", "season"].includes(r.unit)) return null;
+    let from = shift(r.from, r.unit);
+    let to = r.unit === "month" ? (() => { const y = +from.slice(0, 4), m = +from.slice(5, 7); return ymd(y, m, lastDay(y, m)); })() : shift(r.to, r.unit);
+    const label = r.unit === "month" ? App.fmtMonth(from.slice(0, 7)) : r.unit === "year" ? from.slice(0, 4) : r.unit === "week" ? `Week of ${shortDay(from)}` : `${shortDay(from)} – ${shortDay(to)}`;
+    return { from, to, unit: r.unit, label, test: x => x >= from && x <= to };
+  }
+
+  // ---------- the parser ----------
+  function parse(q, today, ctx) {
+    today = today || App.todayStr();
+    ctx = ctx || {};
+    const settings = ctx.settings || {};
+    const out = { groups: [], dropped: [], corrected: [], starred: false, ask: "", alternatives: [], periods: null };
+
+    let s = " " + String(q || "").toLowerCase().replace(/[’']/g, "").replace(/[?!"“”,;:()]/g, " ").replace(/\s+/g, " ") + " ";
+
+    // "more this month than last month" → two periods to compare.
+    const cmp = /\b(than|vs|versus|compared (?:to|with))\b/.exec(s);
+    let dates;
+    if (cmp) {
+      const a = parseDates(s.slice(0, cmp.index) + " ", today, settings, q);
+      const right = s.slice(cmp.index + cmp[0].length);
+      let b = parseDates(" " + right, today, settings, q);
+      if (!b.tests.length && /\b(last|previous|before|prior)\b/.test(right)) {
+        const prev = previousRange(a.range);
+        if (prev) b = { tests: [prev.test], when: [prev.label], s: b.s.replace(/\b(last|previous|before|prior)\b/, " "), test: prev.test, alternatives: [] };
+      }
+      if (a.tests.length && b.tests.length) {
+        out.ask = "compare";
+        out.periods = [{ label: a.when.join(" · "), test: a.test }, { label: b.when.join(" · "), test: b.test }];
+        dates = { tests: [d => a.test(d) || b.test(d)], when: [`${out.periods[0].label} vs ${out.periods[1].label}`], s: a.s + " " + b.s, alternatives: [] };
+        dates.test = dates.tests[0];
+      }
+    }
+    if (!dates) dates = parseDates(s, today, settings, q);
+    s = dates.s;
+    out.alternatives = dates.alternatives;
 
     // ---------- what kind of answer ----------
-    if (/\bhow (many|often)\b|\bnumber of\b|\bcount\b/.test(s)) out.ask = "count";
-    else if (/\bhow long(?: has it been)?(?: since| ago)?\b/.test(s)) out.ask = "since";
+    if (out.ask) { /* compare */ }
+    else if (/\bstreak\b|\bin a row\b|\bstraight days\b|\bconsecutive\b/.test(s)) out.ask = "streak";
+    else if (/\blongest (?:time |stretch |period |gap |break )?without\b|\blongest (?:gap|break|stretch)\b|\bwent the longest\b/.test(s)) out.ask = "gap";
+    else if (/\bhow long (?:since|ago|has it been)\b|\bhow long\b.*\bsince\b/.test(s)) out.ask = "since";
+    else if (/\bhow long (?:was|were|did|is)\b|\bhow many days (?:was|were|did)\b/.test(s)) out.ask = "duration";
+    else if (/\bhow (?:many|often)\b|\bnumber of\b|\bcount\b/.test(s)) out.ask = "count";
+    else if (/\b(?:didnt|did not|havent|have not|without)\b/.test(s)) out.ask = "without";
     else if (/\bwho\b/.test(s)) out.ask = "who";
     else if (/\bwhere\b/.test(s)) out.ask = "where";
     else if (/\bfirst\b|\bearliest\b/.test(s)) out.ask = "first";
     else if (/\blast\b|\bmost recent(ly)?\b|\blatest\b|\brecently\b/.test(s) || /^\s*when\b/.test(s)) out.ask = "last";
-    else if (/\bwhat did i think\b|\bhow did i feel\b|\bhow (was|were|did)\b|\bthoughts? on\b|\bfe(?:el|lt) about\b|\bopinion\b/.test(s)) out.ask = "read";
+    else if (/\bwhat did i think\b|\bhow did i (?:feel|sleep)\b|\bhow (?:was|were|did)\b|\bthoughts? on\b|\bfe(?:el|lt) about\b|\bopinion\b/.test(s)) out.ask = "read";
 
     STARRED.lastIndex = 0;
     if (STARRED.test(s)) { out.starred = true; s = s.replace(STARRED, " "); }
+    const hadOr = /\bor\b/.test(s);
 
     // ---------- what it's about ----------
     s = ` ${clean(s)} `;
     const known = [];
     (settings.people || []).forEach(p => known.push({ name: p.name, kind: "person", words: [p.name, ...(p.aliases || [])] }));
     (settings.groups || []).forEach(g => known.push({ name: g.name, kind: "group", words: [g.name, ...(g.words || [])] }));
-    BUILTIN_GROUPS.forEach(g => known.push({ name: g.name, kind: "group", words: g.words }));
+    BUILTIN_GROUPS.forEach(g => known.push({ name: g.name, kind: "group", words: g.words, more: g.more }));
     const phrases = [];
     known.forEach(k => k.words.map(clean).filter(Boolean).forEach(w => phrases.push({ w, k })));
     phrases.sort((a, b) => b.w.length - a.w.length);
@@ -341,7 +427,7 @@
       const re = new RegExp(` ${escRe(w)}${ENDINGS}(?= )`, "g");
       if (!re.test(s)) continue;
       s = s.replace(re, " ");
-      if (!used.has(k)) used.set(k, { label: k.name, kind: k.kind, alts: k.words });
+      if (!used.has(k)) used.set(k, { label: k.name, kind: k.kind, alts: k.words.concat(k.more || []) });
     }
     out.groups.push(...used.values());
 
@@ -352,9 +438,15 @@
       else out.dropped.push(w);
     }
 
-    out.hasDate = tests.length > 0;
-    out.when = when.join(" · ");
-    out.test = d => tests.every(t => t(d));
+    // "James or Sam": any of them will do.
+    if (hadOr && out.groups.length > 1) {
+      out.groups = [{ label: out.groups.map(g => g.label).join(" or "), kind: "any", alts: out.groups.flatMap(g => g.alts), parts: out.groups }];
+    }
+
+    out.hasDate = dates.tests.length > 0;
+    out.when = dates.when.join(" · ");
+    out.range = dates.range || null;
+    out.test = dates.test;
     return out;
   }
 

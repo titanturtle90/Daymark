@@ -4,6 +4,36 @@
 (function (App) {
   "use strict";
 
+  // Capitalized names that show up mid-sentence in at least 3 entries, aren't
+  // already People, aren't months/days/places Daymark knows, and are never
+  // written in lowercase (so "Gym" at a line start doesn't count).
+  const NOT_NAMES = new Set(("i im ive ill id the a an and but so then when this that my mom dad ok okay god lol " +
+    "january february march april may june july august september october november december " +
+    "monday tuesday wednesday thursday friday saturday sunday today tomorrow yesterday christmas easter thanksgiving").split(" "));
+  function suggestNames(st) {
+    const known = new Set([...(st.people || []).flatMap(p => [p.name, ...(p.aliases || [])]), ...(st.dismissedNames || [])]
+      .flatMap(n => App.norm(n).split(/\s+/)));
+    App.builtinGroups.forEach(g => g.words.forEach(w => w.split(" ").forEach(x => known.add(x))));
+    const counts = new Map();
+    const lower = new Set();
+    for (const e of App.store.all()) {
+      const text = e.text || "";
+      (text.match(/\b[a-z][a-z']+\b/g) || []).forEach(w => lower.add(w));
+      const seen = new Set();
+      text.split(/[.!?\n]+/).forEach(sentence => {
+        const words = sentence.trim().split(/\s+/).slice(1);
+        words.forEach(w => {
+          const m = /^([A-Z][a-z]{2,})(?:'s)?[,;:)]*$/.exec(w);
+          if (m) seen.add(m[1]);
+        });
+      });
+      seen.forEach(n => counts.set(n, (counts.get(n) || 0) + 1));
+    }
+    return [...counts.entries()]
+      .filter(([n, c]) => c >= 3 && !NOT_NAMES.has(n.toLowerCase()) && !known.has(n.toLowerCase()) && !lower.has(n.toLowerCase()))
+      .sort((a, b) => b[1] - a[1]).slice(0, 6).map(([name, count]) => ({ name, count }));
+  }
+
   function render(root) {
     const s = App.store;
     const all = s.all();
@@ -16,6 +46,7 @@
     const people = st.people || [];
     const groups = st.groups || [];
     const [bm, bd] = (st.birthday || "-").split("-");
+    const nameSuggestions = suggestNames(st);
 
     root.innerHTML = `
       <header class="page-head"><h1>Settings</h1></header>
@@ -69,6 +100,8 @@
 
         <h3 class="set-sub">People</h3>
         <p class="muted small">Add someone once with every way you refer to them, e.g. <em>Sarah</em> also known as <em>my sister, sis</em>.</p>
+        ${nameSuggestions.length ? `<div class="name-suggest"><span class="muted small">Names in your journal:</span>${nameSuggestions.map(n => `
+          <span class="name-chip"><button type="button" data-add-name="${App.escapeHtml(n.name)}">+ ${App.escapeHtml(n.name)} <small>${n.count}</small></button><button type="button" data-dismiss-name="${App.escapeHtml(n.name)}" aria-label="Not a person">${App.icon("x")}</button></span>`).join("")}</div>` : ""}
         <div class="set-list" data-list="people">${people.map((p, i) => `
           <button type="button" class="set-row" data-edit-person="${i}"><strong>${App.escapeHtml(p.name)}</strong><span>${App.escapeHtml((p.aliases || []).join(", "))}</span>${App.icon("edit")}</button>`).join("") || `<p class="muted small empty-row">No people yet.</p>`}
         </div>
@@ -141,6 +174,10 @@
     root.querySelectorAll("[data-edit-person]").forEach(b => { b.onclick = () => editItem("person", Number(b.dataset.editPerson)); });
     root.querySelectorAll("[data-edit-group]").forEach(b => { b.onclick = () => editItem("group", Number(b.dataset.editGroup)); });
     on("add-person", () => editItem("person", -1));
+    root.querySelectorAll("[data-add-name]").forEach(b => { b.onclick = () => editItem("person", -1, b.dataset.addName); });
+    root.querySelectorAll("[data-dismiss-name]").forEach(b => {
+      b.onclick = () => saveSettings({ dismissedNames: [...((App.store.settings || {}).dismissedNames || []), b.dataset.dismissName] });
+    });
     on("add-group", () => editItem("group", -1));
     const bmonth = root.querySelector('[name="bmonth"]'), bday = root.querySelector('[name="bday"]');
     const saveBday = () => {
@@ -149,11 +186,11 @@
     };
     bmonth.onchange = saveBday; bday.onchange = saveBday;
 
-    function editItem(kind, index) {
+    function editItem(kind, index, presetName) {
       const key = kind === "person" ? "people" : "groups";
       const listKey = kind === "person" ? "aliases" : "words";
       const list = [...((App.store.settings || {})[key] || [])];
-      const item = index >= 0 ? list[index] : { name: "", [listKey]: [] };
+      const item = index >= 0 ? list[index] : { name: presetName || "", [listKey]: [] };
       const sheet = App.sheet({
         title: index >= 0 ? `Edit ${kind}` : kind === "person" ? "Add person" : "Add word group",
         html: `

@@ -89,6 +89,44 @@
     return sorted.map(d => App.parseDate(d).toLocaleDateString(undefined, weekdays ? { weekday: "short" } : { month: "short", day: "numeric" })).join(", ");
   }
 
+  const dayDiff = (a, b) => Math.round((App.parseDate(b) - App.parseDate(a)) / 86400000);
+  const md = d => App.parseDate(d).toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  // "Jun 5 – 7, 2026", "Dec 30, 2025 – Jan 2, 2026"
+  function fmtRange(a, b) {
+    if (a === b) return App.fmtDayMed(a);
+    if (a.slice(0, 4) !== b.slice(0, 4)) return `${md(a)}, ${a.slice(0, 4)} – ${md(b)}, ${b.slice(0, 4)}`;
+    if (a.slice(0, 7) === b.slice(0, 7)) return `${md(a)} – ${Number(b.slice(8))}, ${b.slice(0, 4)}`;
+    return `${md(a)} – ${md(b)}, ${b.slice(0, 4)}`;
+  }
+  // Group sorted days into runs where each day is at most maxGap after the last.
+  function runsOf(days, maxGap) {
+    const runs = [];
+    for (const d of days) {
+      const r = runs[runs.length - 1];
+      if (r && dayDiff(r.end, d) <= maxGap) r.end = d; else runs.push({ start: d, end: d });
+    }
+    runs.forEach(r => { r.len = dayDiff(r.start, r.end) + 1; });
+    return runs;
+  }
+  // "about every 2 weeks"
+  function frequency(days) {
+    if (days.length < 2) return "";
+    const avg = dayDiff(days[0], days[days.length - 1]) / (days.length - 1);
+    if (avg < 1.5) return "almost every day";
+    if (avg < 10) return `about every ${Math.round(avg)} days`;
+    if (avg < 45) { const w = Math.round(avg / 7); return w === 1 ? "about once a week" : `about every ${w} weeks`; }
+    const m = Math.round(avg / 30.44);
+    return m === 1 ? "about once a month" : `about every ${m} months`;
+  }
+  // Days a "didn't" question covers: the asked period (up to today), else the whole journal.
+  function periodDays(p) {
+    const today = App.todayStr();
+    const dates = App.store.dates();
+    const from = p.range ? p.range.from : dates[0];
+    const to = p.range && p.range.to < today ? p.range.to : today;
+    return from && from <= to ? { from, to, count: dayDiff(from, to) + 1 } : null;
+  }
+
   // The short answer shown above the results.
   function answerCard(p, exact, pool) {
     if (!p.ask) return "";
@@ -121,16 +159,77 @@
         </div>`;
     }
 
+    if (p.ask === "compare") {
+      const counts = p.periods.map(per => new Set(exact.filter(e => per.test(e.date)).map(e => e.date)).size);
+      const diff = counts[0] - counts[1];
+      const unit = n => (Math.abs(n) === 1 ? "day" : "days");
+      return `
+        <div class="answer">
+          <div class="answer-kicker">${p.groups.length ? `Days with ${subject}` : "Days you wrote"}</div>
+          <div class="answer-big">${diff > 0 ? `${diff} more ${unit(diff)}` : diff < 0 ? `${-diff} fewer ${unit(diff)}` : "The same"}</div>
+          <ul class="answer-list">${p.periods.map((per, i) => `<li><strong>${App.escapeHtml(per.label)}</strong><span>${counts[i]} ${unit(counts[i])}</span></li>`).join("")}</ul>
+        </div>`;
+    }
+    if (p.ask === "without") {
+      const per = periodDays(p);
+      if (!per) return "";
+      const hit = new Set(exact.filter(e => e.date >= per.from && e.date <= per.to).map(e => e.date)).size;
+      return `
+        <div class="answer">
+          <div class="answer-kicker">${App.escapeHtml(p.when || `Since ${App.fmtDayMed(per.from)}`)}</div>
+          <div class="answer-big">${per.count - hit} ${per.count - hit === 1 ? "day" : "days"} without</div>
+          <p>You mentioned ${subject} on ${hit} of ${per.count} days. Below: days you wrote that don't mention it.</p>
+        </div>`;
+    }
+
     if (!exact.length) return `<div class="answer none"><p>Nothing in your journal mentions ${subject}${scope} yet.</p></div>`;
     const days = [...new Set(exact.map(e => e.date))].sort();
     const last = days[days.length - 1];
     if (p.ask === "count") {
+      const freq = frequency(days);
       return `
         <div class="answer">
           <div class="answer-kicker">${App.escapeHtml(p.when || "In your whole journal")}</div>
-          <div class="answer-big">${days.length} ${days.length === 1 ? "time" : "times"}</div>
+          <div class="answer-big">${days.length} ${days.length === 1 ? "time" : "times"}${freq ? `<small>${freq}</small>` : ""}</div>
           <p>Days with an entry mentioning ${subject}. Most recently <a href="#/day/${last}">${App.escapeHtml(App.fmtDayMed(last))}</a>, ${ago(last)}.</p>
         </div>`;
+    }
+    if (p.ask === "streak") {
+      const runs = runsOf(days, 1);
+      const best = runs.reduce((a, r) => (r.len >= a.len ? r : a), runs[0]);
+      const current = runs.find(r => dayDiff(r.end, App.todayStr()) <= 1);
+      return `
+        <div class="answer">
+          <div class="answer-kicker">Longest streak${scope}</div>
+          <div class="answer-big">${App.plural(best.len, "day")} in a row</div>
+          <p>${App.escapeHtml(fmtRange(best.start, best.end))}${current === best && best.len > 1 ? " · still going!" : current && current.len > 1 ? ` · current streak: ${current.len} days` : ""}</p>
+        </div>`;
+    }
+    if (p.ask === "gap") {
+      let best = { n: -1 };
+      for (let i = 1; i < days.length; i++) {
+        const n = dayDiff(days[i - 1], days[i]) - 1;
+        if (n > best.n) best = { n, a: days[i - 1], b: days[i] };
+      }
+      const since = dayDiff(last, App.todayStr());
+      const ongoing = since > best.n;
+      const n = ongoing ? since : best.n;
+      return `
+        <div class="answer">
+          <div class="answer-kicker">Longest stretch without ${subject}${scope}</div>
+          <div class="answer-big">${App.plural(Math.max(n, 0), "day")}</div>
+          <p>${ongoing ? `Since ${App.escapeHtml(App.fmtDayMed(last))}, and counting.` : `Between ${App.escapeHtml(App.fmtDayMed(best.a))} and ${App.escapeHtml(App.fmtDayMed(best.b))}.`}</p>
+        </div>`;
+    }
+    if (p.ask === "duration") {
+      const trips = runsOf(days, 2); // a day off in the middle still counts as one trip
+      const t = trips[trips.length - 1];
+      return `
+        <a class="answer" href="#/day/${t.start}">
+          <div class="answer-kicker">${trips.length > 1 ? `Most recent of ${trips.length} visits` : "How long"}${scope}</div>
+          <div class="answer-big">${App.plural(t.len, "day")}</div>
+          <p>${App.escapeHtml(fmtRange(t.start, t.end))}${open}</p>
+        </a>`;
     }
     if (p.ask === "since") {
       return `
@@ -156,6 +255,16 @@
         <p>${cap(ago(d))}${days.length > 1 ? ` · mentioned on ${days.length} days in all` : ""}${open}</p>
       </a>`;
   }
+
+  // Your last few questions, newest first (this device only).
+  const RECENT_KEY = "daymark.recentSearches";
+  const recents = () => App.lsGet(RECENT_KEY, []) || [];
+  function remember(q) {
+    q = String(q || "").trim();
+    if (q.length < 3) return;
+    App.lsSet(RECENT_KEY, [q, ...recents().filter(x => x.toLowerCase() !== q.toLowerCase())].slice(0, 8));
+  }
+  let rememberTimer = null;
 
   // Tappable examples shown before you type.
   const EXAMPLES = [
@@ -192,8 +301,12 @@
       <div class="results"></div>
     `;
     const input = root.querySelector("input");
-    input.oninput = App.debounce(() => { state.q = input.value; state.limit = 50; paintResults(root); paintChips(root); }, 150);
-    input.onkeydown = ev => { if (ev.key === "Enter") input.blur(); };
+    input.oninput = App.debounce(() => {
+      state.q = input.value; state.limit = 50; paintResults(root); paintChips(root);
+      clearTimeout(rememberTimer);
+      rememberTimer = setTimeout(() => remember(state.q), 2500);
+    }, 150);
+    input.onkeydown = ev => { if (ev.key === "Enter") { remember(input.value); input.blur(); } };
     root.querySelector('[data-a="starred"]').onclick = () => { state.starred = !state.starred; render(root); };
     root.querySelector('[data-a="dates"]').onclick = () => pickDates(root);
     const clear = root.querySelector('[data-a="clear"]');
@@ -237,11 +350,25 @@
     }
     if (!active()) {
       const recent = App.store.all().filter(e => e.starred).sort((a, b) => (a.date < b.date ? 1 : -1)).slice(0, 10);
+      const rec = recents();
       box.innerHTML = `
+        ${rec.length ? `<h2 class="mini-title">Recent</h2><div class="recents">${rec.map((q, i) => `
+          <div class="recent-row"><button type="button" class="recent-q" data-recent="${i}">${App.icon("history")}<span>${App.escapeHtml(q)}</span></button><button type="button" class="icon-btn sm" data-forget="${i}" aria-label="Remove">${App.icon("x")}</button></div>`).join("")}</div>
+          <h2 class="mini-title">Try asking</h2>` : ""}
         <div class="examples">${EXAMPLES.map(([label, q], i) => `<button type="button" class="chip" data-ex="${i}">${App.escapeHtml(label)}</button>`).join("")}</div>
         <p class="muted small">Search a word, person or place, or ask in plain English, like <em>when did I last see James?</em>, <em>what did I do last Sunday?</em> or <em>how many times did I work out this year?</em> Teach it nicknames in <a href="#/settings">Settings → Smart search</a>.</p>
         ${recent.length ? `<h2 class="section-title">${App.icon("star")} Recent highlights</h2><div class="entries">${recent.map(e => App.entryCard({ ...e, text: App.snippet(e, 200) }, { showDate: true })).join("")}</div>` : ""}`;
       App.bindEntries(box);
+      const runQuery = q => {
+        const input = root.querySelector(".search-box input");
+        state.q = q; input.value = q; state.limit = 50;
+        remember(q);
+        paintResults(root); paintChips(root);
+      };
+      box.querySelectorAll("[data-recent]").forEach(b => { b.onclick = () => runQuery(rec[Number(b.dataset.recent)]); });
+      box.querySelectorAll("[data-forget]").forEach(b => {
+        b.onclick = () => { App.lsSet(RECENT_KEY, rec.filter((_, i) => i !== Number(b.dataset.forget))); paintResults(root); };
+      });
       box.querySelectorAll("[data-ex]").forEach(b => {
         b.onclick = () => {
           const q = EXAMPLES[Number(b.dataset.ex)][1];
@@ -255,7 +382,13 @@
     }
     const p = parsed();
     const { exact, closest, pool } = search(p);
-    const showing = exact.length ? exact : closest;
+    let showing = exact.length ? exact : closest;
+    if (p.ask === "without") {
+      const hit = new Set(exact.map(e => e.date));
+      showing = pool.filter(e => !hit.has(e.date));
+    }
+    // "What did I do on…" questions get one summary card per day.
+    const byDay = p.hasDate && !p.groups.length && (!p.ask || p.ask === "read");
     const shown = showing.slice(0, state.limit);
     const hl = highlightTerms(p);
     // How the question was read, e.g. "October 14 · every year · “James Agan”".
@@ -266,7 +399,9 @@
       ...(p.dropped.length && p.groups.length ? [`Left out ${p.dropped.map(w => `“${App.escapeHtml(w)}”`).join(", ")}, which isn't in your journal.`] : [])
     ];
     let count;
-    if (exact.length) count = App.plural(exact.length, "entry", "entries") + (new Set(exact.map(e => e.date)).size !== exact.length ? ` on ${App.plural(new Set(exact.map(e => e.date)).size, "day")}` : "");
+    if (p.ask === "without") count = showing.length ? `Days you wrote without it: ${new Set(showing.map(e => e.date)).size}` : "";
+    else if (byDay && exact.length) count = App.plural(new Set(exact.map(e => e.date)).size, "day");
+    else if (exact.length) count = App.plural(exact.length, "entry", "entries") + (new Set(exact.map(e => e.date)).size !== exact.length ? ` on ${App.plural(new Set(exact.map(e => e.date)).size, "day")}` : "");
     else if (closest.length) count = p.hasDate || state.from || state.to
       ? `Nothing mentions ${p.groups.map(g => `“${App.escapeHtml(g.label)}”`).join(" + ")} then. Here's everything from ${App.escapeHtml(p.when || "those dates")}:`
       : "No entry matches everything. Closest matches:";
@@ -275,15 +410,45 @@
     const answer = answerCard(p, exact, pool);
     box.innerHTML = `
       ${state.q.trim() && !plain && readAs.length ? `<p class="read-as">${App.icon("search")}<span>Showing <strong>${readAs.map(App.escapeHtml).join(" · ")}</strong></span></p>` : ""}
+      ${p.alternatives.length ? `<div class="alt-chips"><span>Also:</span>${p.alternatives.map((a, i) => `<button type="button" class="chip" data-alt="${i}">${App.escapeHtml(a.label)}</button>`).join("")}</div>` : ""}
       ${notes.length ? `<p class="search-note">${notes.join(" ")}</p>` : ""}
       ${answer}
-      <p class="result-count">${count}</p>
-      <div class="entries">${shown.map(e => App.entryCard({ ...e, text: around(e.text, hl, 220) }, { showDate: true, terms: hl, maxPhotos: 4 })).join("")}</div>
+      ${count ? `<p class="result-count">${count}</p>` : ""}
+      ${byDay ? daySummaries(shown) : `<div class="entries">${shown.map(e => App.entryCard({ ...e, text: around(e.text, hl, 220) }, { showDate: true, terms: hl, maxPhotos: 4 })).join("")}</div>`}
       ${showing.length > shown.length ? `<div class="center"><button type="button" class="btn ghost" data-a="more">Show more</button></div>` : ""}
     `;
     App.bindEntries(box);
+    box.querySelectorAll("[data-alt]").forEach(b => {
+      b.onclick = () => {
+        const q = p.alternatives[Number(b.dataset.alt)].q;
+        const input = root.querySelector(".search-box input");
+        state.q = q; input.value = q; state.limit = 50;
+        paintResults(root);
+      };
+    });
     const more = box.querySelector('[data-a="more"]');
     if (more) more.onclick = () => { state.limit += 50; paintResults(root); };
+  }
+
+  // One card per day: date, each entry's time and first line, a photo.
+  function daySummaries(list) {
+    const days = new Map();
+    list.forEach(e => { if (!days.has(e.date)) days.set(e.date, []); days.get(e.date).push(e); });
+    return `<div class="day-cards">${[...days.entries()].map(([d, es]) => {
+      const all = App.store.forDate(d);
+      const photo = all.flatMap(e => e.photos || [])[0];
+      const place = all.map(e => e.location && e.location.label).find(Boolean);
+      return `
+        <a class="day-card" href="#/day/${d}">
+          <div class="day-card-main">
+            <div class="day-card-date">${App.escapeHtml(App.fmtDayLong(d))}</div>
+            ${place ? `<div class="day-card-place">${App.icon("pin")}${App.escapeHtml(place)}</div>` : ""}
+            <ul>${all.slice(0, 4).map(e => `<li>${e.time ? `<b>${App.escapeHtml(App.fmtTime(e.time))}</b> ` : ""}${App.escapeHtml(App.snippet(e, 110))}</li>`).join("")}</ul>
+            ${all.length > 4 ? `<div class="muted small">+ ${App.plural(all.length - 4, "more entry", "more entries")}</div>` : ""}
+          </div>
+          ${photo ? `<div class="day-card-photo">${App.photoImg(photo, true)}</div>` : ""}
+        </a>`;
+    }).join("")}</div>`;
   }
 
   function pickDates(root) {

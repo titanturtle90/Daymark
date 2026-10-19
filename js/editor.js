@@ -128,7 +128,8 @@
     sheet.onClosed = () => { if (window.visualViewport) window.visualViewport.removeEventListener("resize", onViewport); };
     dateIn.onchange = () => { if (dateIn.value) e.date = dateIn.value; changed(); };
     timeIn.onchange = () => { e.time = timeIn.value || null; changed(); };
-    textIn.oninput = () => { e.text = textIn.value; grow(); keepCaretVisible(); changed(); };
+    const suggestLater = App.debounce(() => renderSuggest(), 400);
+    textIn.oninput = () => { e.text = textIn.value; grow(); keepCaretVisible(); changed(); suggestLater(); };
     textIn.onfocus = () => setTimeout(keepCaretVisible, 350); // after the keyboard slides up
     requestAnimationFrame(grow);
 
@@ -203,8 +204,15 @@
     function renderSuggest() {
       const q = App.norm(tagIn.value.replace(/^#/, ""));
       const have = new Set((e.tags || []).map(App.norm));
-      const list = App.store.tags().filter(x => !have.has(App.norm(x.tag)) && (!q || App.norm(x.tag).includes(q))).slice(0, 8);
-      suggestEl.innerHTML = list.map(x => `<button type="button" class="tag tag-c${App.tagColor(x.tag)} suggest" data-t="${App.escapeHtml(x.tag)}">+ ${App.escapeHtml(x.tag)}</button>`).join("");
+      // People from Settings → People mentioned in the text come first ("Jimmy" → James Agan).
+      const text = App.searchText(e.text || "");
+      const people = q ? [] : (App.store.settings.people || [])
+        .filter(x => !have.has(App.norm(x.name)) && App.groupMatches(text, { kind: "person", alts: [x.name, ...(x.aliases || [])] }))
+        .map(x => x.name);
+      const peopleKeys = new Set(people.map(App.norm));
+      const list = App.store.tags().filter(x => !have.has(App.norm(x.tag)) && !peopleKeys.has(App.norm(x.tag)) && (!q || App.norm(x.tag).includes(q))).slice(0, 8);
+      suggestEl.innerHTML = people.map(n => `<button type="button" class="tag tag-c${App.tagColor(n)} suggest mentioned" data-t="${App.escapeHtml(n)}">+ ${App.escapeHtml(n)}</button>`).join("")
+        + list.map(x => `<button type="button" class="tag tag-c${App.tagColor(x.tag)} suggest" data-t="${App.escapeHtml(x.tag)}">+ ${App.escapeHtml(x.tag)}</button>`).join("");
       suggestEl.querySelectorAll("[data-t]").forEach(b => { b.onclick = () => addTag(b.dataset.t); });
     }
     tagIn.oninput = () => { if (/[,;]$/.test(tagIn.value)) addTag(tagIn.value.slice(0, -1)); else renderSuggest(); };
