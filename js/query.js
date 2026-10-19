@@ -6,6 +6,8 @@
  *  - monthDay "10-14" / month "10": a date with no year, matched in every year
  *  - terms: the words left after dates and filler words are taken out
  *  - when: a readable description of the date part, e.g. "October 14 · every year"
+ *  - ask: what kind of answer the question wants: "last" (when did I last…),
+ *    "first" (first time I…), "count" (how many times…), or "" for a plain search
  */
 (function (App) {
   "use strict";
@@ -19,7 +21,8 @@
     "was were is are be been there then go went going see saw seen have had has any some thing things stuff that this " +
     "those these day days time times how many much where who whom with tell show find get got up to from about ever last " +
     "happened happen happening list all everything around ago and or by it its you your can could would please remind " +
-    "again us we our anything something which moments moment memories memory may").split(" "));
+    "again us we our anything something which moments moment memories memory may " +
+    "hung hang hanging hangout out spend spent visit visited visiting most recent recently latest first earliest often number count").split(" "));
   const STARRED = /\b(highlights?|best|favou?rites?|starred|memorable|top)\b/g;
 
   const pad = n => String(n).padStart(2, "0");
@@ -31,7 +34,7 @@
   function parse(q, today) {
     today = today || App.todayStr();
     let s = " " + String(q || "").toLowerCase().replace(/[’']/g, "").replace(/[?!"“”]/g, " ") + " ";
-    const out = { terms: [], from: "", to: "", monthDay: "", month: "", starred: false, when: "" };
+    const out = { terms: [], from: "", to: "", monthDay: "", month: "", starred: false, when: "", ask: "" };
     const take = (re, fn) => {
       if (out.when) return;
       const m = re.exec(s);
@@ -92,6 +95,11 @@
 
     STARRED.lastIndex = 0;
     if (STARRED.test(s)) { out.starred = true; s = s.replace(STARRED, " "); }
+
+    // What kind of answer: checked after dates, so "last week" stays a date.
+    if (/\bhow (many|often)\b|\bnumber of\b|\bcount\b/.test(s)) out.ask = "count";
+    else if (/\bfirst\b|\bearliest\b/.test(s)) out.ask = "first";
+    else if (/\blast\b|\bmost recent(ly)?\b|\blatest\b|\brecently\b/.test(s) || /^\s*when\b/.test(s)) out.ask = "last";
 
     out.terms = s.split(/[\s,.;:()]+/).map(App.norm).filter(w => w && !STOP.has(w));
     return out;

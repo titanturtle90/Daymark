@@ -58,6 +58,45 @@
     return s;
   }
 
+  // "3 days ago", "2 months ago"…
+  function ago(d) {
+    const days = Math.round((App.parseDate(App.todayStr()) - App.parseDate(d)) / 86400000);
+    if (days <= 0) return "today";
+    if (days === 1) return "yesterday";
+    if (days < 14) return `${days} days ago`;
+    if (days < 60) return `${Math.round(days / 7)} weeks ago`;
+    const months = Math.round(days / 30.44);
+    if (months < 12) return `${months} months ago`;
+    const y = Math.floor(months / 12), m = months % 12;
+    return `${App.plural(y, "year")}${m ? `, ${App.plural(m, "month")}` : ""} ago`;
+  }
+
+  // The short answer shown above the results for "when did I last…",
+  // "first time I…" and "how many times…" questions.
+  function answerCard(p, all) {
+    if (!p.ask) return "";
+    const subject = p.terms.length ? `“${App.escapeHtml(p.terms.join(" "))}”` : "this";
+    const scope = p.when ? ` (${App.escapeHtml(p.when)})` : "";
+    if (!all.length) return `<div class="answer none"><p>Nothing in your journal mentions ${subject}${scope} yet.</p></div>`;
+    const days = [...new Set(all.map(e => e.date))].sort();
+    const last = days[days.length - 1];
+    if (p.ask === "count") {
+      return `
+        <div class="answer">
+          <div class="answer-kicker">${App.escapeHtml(p.when || "In your whole journal")}</div>
+          <div class="answer-big">${days.length} ${days.length === 1 ? "time" : "times"}</div>
+          <p>Days with an entry mentioning ${subject}. Most recently <a href="#/day/${last}">${App.escapeHtml(App.fmtDayMed(last))}</a>, ${ago(last)}.</p>
+        </div>`;
+    }
+    const d = p.ask === "first" ? days[0] : last;
+    return `
+      <a class="answer" href="#/day/${d}">
+        <div class="answer-kicker">${p.ask === "first" ? "First time" : "Last time"}${scope}</div>
+        <div class="answer-big">${App.escapeHtml(App.fmtDayLong(d))}</div>
+        <p>${ago(d).replace(/^./, c => c.toUpperCase())}${days.length > 1 ? ` · mentioned on ${days.length} days in all` : ""} <span class="answer-open">Open that day ${App.icon("next")}</span></p>
+      </a>`;
+  }
+
   function dateLabel() {
     if (!state.from && !state.to) return "Any time";
     if (state.from && state.to) {
@@ -129,7 +168,7 @@
     if (!active()) {
       const recent = App.store.all().filter(e => e.starred).sort((a, b) => (a.date < b.date ? 1 : -1)).slice(0, 10);
       box.innerHTML = `
-        <p class="muted small">Search a word, person or place, like <em>dentist</em> or <em>Sam</em>, or ask in plain English: <em>what did I do on Oct 14</em>, <em>last week</em>, <em>highlights of 2025</em>. Tap a tag above to see every entry with it.</p>
+        <p class="muted small">Search a word, person or place, like <em>dentist</em> or <em>Sam</em>, or ask in plain English: <em>what did I do on Oct 14</em>, <em>when did I last see Sam</em>, <em>how many times did I go to the gym last year</em>. Tap a tag above to see every entry with it.</p>
         ${recent.length ? `<h2 class="section-title">${App.icon("star")} Recent highlights</h2><div class="entries">${recent.map(e => App.entryCard({ ...e, text: App.snippet(e, 200) }, { showDate: true })).join("")}</div>` : ""}`;
       App.bindEntries(box);
       return;
@@ -143,6 +182,7 @@
     const showReadAs = state.q.trim() && (p.when || p.starred || ts.join(" ") !== App.norm(state.q).trim().replace(/\s+/g, " "));
     box.innerHTML = `
       ${showReadAs ? `<p class="read-as">${App.icon("search")}<span>Showing <strong>${readAs.map(App.escapeHtml).join(" · ") || "everything"}</strong></span></p>` : ""}
+      ${answerCard(p, all)}
       <p class="result-count">${all.length ? App.plural(all.length, "entry", "entries") + (new Set(all.map(e => e.date)).size !== all.length ? ` on ${App.plural(new Set(all.map(e => e.date)).size, "day")}` : "") : "No matches. Try fewer or different words."}</p>
       <div class="entries">${shown.map(e => App.entryCard({ ...e, text: around(e.text, ts, 220) }, { showDate: true, terms: ts, maxPhotos: 4 })).join("")}</div>
       ${all.length > shown.length ? `<div class="center"><button type="button" class="btn ghost" data-a="more">Show more</button></div>` : ""}
