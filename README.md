@@ -43,12 +43,31 @@ AI transcription with a record button, auto-tagging, an AI "ask my journal" chat
 
 Use **Firebase Hosting** rather than GitHub Pages. Google sign-in in an iPhone home-screen app only works reliably when the app is served from the same domain as the sign-in page.
 
-Automatic deploys on every merge to `main`:
-1. Go to Firebase console → *Project settings → Service accounts → Generate new private key*.
-2. In the GitHub repo, go to *Settings → Secrets and variables → Actions*:
-   - Secret `FIREBASE_SERVICE_ACCOUNT`: paste the whole JSON key file.
-   - Variable `FIREBASE_PROJECT_ID`: your project ID, e.g. `daymark-12345`.
-3. Push or merge to `main`, or run *Actions → Deploy to Firebase Hosting → Run workflow*. Until the secret and variable are set, the workflow skips the deploy instead of failing.
+### Automatic publishing
+
+Every push to `main` publishes the app (`.github/workflows/deploy.yml`). It checks that the code parses, deploys to Firebase Hosting, then confirms the live site is serving the new version. A failed check stops the deploy before anything goes live. Until the setup below is done, the workflow skips the deploy and shows a warning.
+
+One-time setup, in [Cloud Shell](https://shell.cloud.google.com) signed in as the Firebase project owner (replace the project ID and repo):
+
+```
+PROJECT=daymark-19a58
+SA=github-deployer
+gcloud config set project $PROJECT
+gcloud services enable firebasehosting.googleapis.com firebase.googleapis.com serviceusage.googleapis.com apikeys.googleapis.com
+gcloud iam service-accounts create $SA --display-name="GitHub deploy"
+for ROLE in roles/firebasehosting.admin roles/serviceusage.apiKeysViewer roles/serviceusage.serviceUsageConsumer; do
+  gcloud projects add-iam-policy-binding $PROJECT --member="serviceAccount:$SA@$PROJECT.iam.gserviceaccount.com" --role="$ROLE" --condition=None --quiet >/dev/null
+done
+gcloud iam service-accounts keys create key.json --iam-account=$SA@$PROJECT.iam.gserviceaccount.com
+gh auth login --hostname github.com --git-protocol https --web
+gh secret set FIREBASE_SERVICE_ACCOUNT --repo OWNER/REPO < key.json
+gh variable set FIREBASE_PROJECT_ID --repo OWNER/REPO --body $PROJECT
+rm key.json
+```
+
+The service account can only manage Firebase Hosting. To revoke it later, delete the `FIREBASE_SERVICE_ACCOUNT` secret and the `github-deployer` service account. To undo a bad release, open the Firebase console, go to *Hosting*, and use *Roll back* on the previous version.
+
+The Firestore and Storage rules are not deployed automatically; run `firebase deploy --only firestore:rules,storage` when they change.
 
 Then open **`https://YOUR-PROJECT.firebaseapp.com`** in Safari on your iPhone (use this address, not `.web.app`, so sign-in works). Tap **Share → Add to Home Screen**, then open Daymark from the home screen and sign in.
 

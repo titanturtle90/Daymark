@@ -1,15 +1,34 @@
 name: Deploy to Firebase Hosting
 
+# Every push to main publishes the app to https://<project>.firebaseapp.com.
+# One-time setup: see "Automatic publishing" in README.md.
+
 on:
   push:
     branches: [main]
   workflow_dispatch:
+
+# One deploy at a time; a newer push waits for the one in progress.
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+permissions:
+  contents: read
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
+      # A syntax error would break the whole app, so stop before it goes live.
+      - name: Check the code parses
+        run: |
+          set -e
+          for f in js/*.js sw.js; do node --check "$f"; done
+          python3 -c "import json; [json.load(open(f)) for f in ('manifest.json', 'firebase.json')]"
+
       - name: Check that Firebase is set up
         id: check
         env:
@@ -17,16 +36,33 @@ jobs:
           PROJECT: ${{ vars.FIREBASE_PROJECT_ID }}
         run: |
           if [ -z "$SA" ] || [ -z "$PROJECT" ]; then
-            echo "FIREBASE_SERVICE_ACCOUNT secret or FIREBASE_PROJECT_ID variable not set yet; skipping deploy (see README)."
+            echo "::warning::Nothing was published: the FIREBASE_SERVICE_ACCOUNT secret or FIREBASE_PROJECT_ID variable isn't set yet (see README)."
             echo "ready=false" >> "$GITHUB_OUTPUT"
           else
             echo "ready=true" >> "$GITHUB_OUTPUT"
           fi
+
       - name: Deploy
         if: steps.check.outputs.ready == 'true'
         uses: FirebaseExtended/action-hosting-deploy@v0
         with:
-          repoToken: ${{ secrets.GITHUB_TOKEN }}
           firebaseServiceAccount: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
           projectId: ${{ vars.FIREBASE_PROJECT_ID }}
           channelId: live
+
+      # The service worker file names the app version; once the live site
+      # serves the same one, installed copies will pick the update up.
+      - name: Confirm the live site updated
+        if: steps.check.outputs.ready == 'true'
+        env:
+          PROJECT: ${{ vars.FIREBASE_PROJECT_ID }}
+        run: |
+          want=$(grep -o 'CACHE_NAME = "[^"]*"' sw.js)
+          for i in 1 2 3 4 5 6; do
+            got=$(curl -fsS "https://$PROJECT.web.app/sw.js?cb=$(date +%s)" | grep -o 'CACHE_NAME = "[^"]*"' || true)
+            if [ "$got" = "$want" ]; then echo "Live site is serving $want"; exit 0; fi
+            echo "Waiting... live has [$got], expected [$want]"
+            sleep 10
+          done
+          echo "::error::The live site did not pick up $want"
+          exit 1
