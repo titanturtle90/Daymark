@@ -50,6 +50,23 @@
     return "";
   };
 
+  // ---------- entry sections ----------
+  // An entry's notes are split into stacked sections (stored in entry.sections).
+  // Older entries keep their single block of text in entry.text ("Notes").
+  App.SECTIONS = [
+    { key: "sleep", label: "Sleep", hint: "How did you sleep?" },
+    { key: "work", label: "Work", hint: "What did you work on?" },
+    { key: "personal", label: "Personal", hint: "Who did you see? What did you do?" },
+    { key: "mental", label: "Mental", hint: "How were you feeling? Anything on your mind?" },
+    { key: "gym", label: "Gym", hint: "Workout or movement today?" }
+  ];
+  const secText = (e, key) => String((e.sections && e.sections[key]) || "").trim();
+  // The words you wrote, without section labels: for search and name matching.
+  App.entryText = e => [String(e.text || "").trim(), ...App.SECTIONS.map(s => secText(e, s.key))].filter(Boolean).join("\n");
+  // One labelled line for lists: "Sleep: 7 hours · Work: capstone workshop".
+  App.entryOverview = e => [String(e.text || "").trim(), ...App.SECTIONS.filter(s => secText(e, s.key)).map(s => `${s.label}: ${secText(e, s.key)}`)]
+    .filter(Boolean).join(" · ").replace(/\s+/g, " ");
+
   // ---------- text helpers ----------
   // Lowercase and strip accents so "Café" matches "cafe".
   App.norm = s => String(s || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();

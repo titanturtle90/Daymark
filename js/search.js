@@ -16,7 +16,7 @@
   // word groups and typo fixes (see query.js).
   const parsed = () => App.parseQuery(state.q, App.todayStr(), { settings: App.store.settings, vocab: App.store.vocab() });
   const active = () => !!(state.q.trim() || state.tags.size || state.starred || state.from || state.to);
-  const hay = e => App.searchText([e.text, (e.tags || []).join(" "), e.location && e.location.label].filter(Boolean).join(" "));
+  const hay = e => App.searchText([App.entryText(e), (e.tags || []).join(" "), e.location && e.location.label].filter(Boolean).join(" "));
   const newestFirst = (a, b) => (a.date === b.date ? String(b.time || "").localeCompare(String(a.time || "")) : a.date < b.date ? 1 : -1);
 
   // Everything except the words: dates in the question, highlights, the
@@ -64,6 +64,15 @@
     if (start > 0) s = "…" + s.replace(/^\S*\s/, "");
     if (start + len < t.length) s = s.replace(/\s\S*$/, "") + "…";
     return s;
+  }
+
+  // The entry with each long section cut to a window around the matching words.
+  function windowed(e, ts) {
+    return {
+      ...e,
+      text: around(e.text, ts, 220),
+      sections: Object.fromEntries(App.SECTIONS.map(x => [x.key, around((e.sections || {})[x.key], ts, 220)]))
+    };
   }
 
   // "3 days ago", "2 months ago"…
@@ -357,7 +366,7 @@
           <h2 class="mini-title">Try asking</h2>` : ""}
         <div class="examples">${EXAMPLES.map(([label, q], i) => `<button type="button" class="chip" data-ex="${i}">${App.escapeHtml(label)}</button>`).join("")}</div>
         <p class="muted small">Search a word, person or place, or ask in plain English, like <em>when did I last see James?</em>, <em>what did I do last Sunday?</em> or <em>how many times did I work out this year?</em> Teach it nicknames in <a href="#/settings">Settings → Smart search</a>.</p>
-        ${recent.length ? `<h2 class="section-title">${App.icon("star")} Recent highlights</h2><div class="entries">${recent.map(e => App.entryCard({ ...e, text: App.snippet(e, 200) }, { showDate: true })).join("")}</div>` : ""}`;
+        ${recent.length ? `<h2 class="section-title">${App.icon("star")} Recent highlights</h2><div class="entries">${recent.map(e => App.entryCard(e, { showDate: true, clip: 200 })).join("")}</div>` : ""}`;
       App.bindEntries(box);
       const runQuery = q => {
         const input = root.querySelector(".search-box input");
@@ -414,7 +423,7 @@
       ${notes.length ? `<p class="search-note">${notes.join(" ")}</p>` : ""}
       ${answer}
       ${count ? `<p class="result-count">${count}</p>` : ""}
-      ${byDay ? daySummaries(shown) : `<div class="entries">${shown.map(e => App.entryCard({ ...e, text: around(e.text, hl, 220) }, { showDate: true, terms: hl, maxPhotos: 4 })).join("")}</div>`}
+      ${byDay ? daySummaries(shown) : `<div class="entries">${shown.map(e => App.entryCard(windowed(e, hl), { showDate: true, terms: hl, maxPhotos: 4 })).join("")}</div>`}
       ${showing.length > shown.length ? `<div class="center"><button type="button" class="btn ghost" data-a="more">Show more</button></div>` : ""}
     `;
     App.bindEntries(box);

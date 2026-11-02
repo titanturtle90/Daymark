@@ -21,6 +21,18 @@
       e.location ? `<span>${App.icon("pin")}${App.escapeHtml(e.location.label)}</span>` : ""
     ].filter(Boolean).join("");
     const photos = e.photos || [];
+    // Each section on top of the next, labelled; older entries show their text as is.
+    const filled = App.SECTIONS.filter(x => String((e.sections || {})[x.key] || "").trim());
+    let body = "";
+    if (opts.clip) {
+      const o = App.snippet(e, opts.clip);
+      if (App.entryText(e) && o) body = `<div class="entry-text" data-a="edit">${App.richText(o, opts.terms)}</div>`;
+    } else {
+      if (e.text) body += `<div class="entry-sec">${filled.length ? `<div class="entry-sec-label">Notes</div>` : ""}<div class="entry-text" data-a="edit">${App.richText(e.text, opts.terms)}</div></div>`;
+      filled.forEach(x => {
+        body += `<div class="entry-sec"><div class="entry-sec-label">${App.escapeHtml(x.label)}</div><div class="entry-text" data-a="edit">${App.richText(String(e.sections[x.key]).trim(), opts.terms)}</div></div>`;
+      });
+    }
     return `
       <article class="entry ${e.starred ? "starred" : ""}" data-id="${App.escapeHtml(e.id)}">
         <div class="entry-head">
@@ -30,7 +42,7 @@
           </div>
           <button type="button" class="icon-btn sm star-btn ${e.starred ? "on" : ""}" data-a="star" aria-label="${e.starred ? "Remove highlight" : "Mark as highlight"}">${App.icon("star")}</button>
         </div>
-        ${e.text ? `<div class="entry-text" data-a="edit">${App.richText(opts.clip ? App.snippet(e, opts.clip) : e.text, opts.terms)}</div>` : ""}
+        ${body}
         ${photos.length ? `<div class="entry-photos n${Math.min(photos.length, 4)}">${photos.slice(0, opts.maxPhotos || 12).map((p, i) => `<button type="button" class="entry-photo" data-photo-i="${i}">${App.photoImg(p, true)}</button>`).join("")}</div>` : ""}
         ${(e.tags || []).length ? `<div class="entry-tags">${e.tags.map(t => `<a href="#/search" class="tag tag-c${App.tagColor(t)}" data-tag="${App.escapeHtml(t)}">${App.escapeHtml(t)}</a>`).join("")}</div>` : ""}
         ${opts.noEdit ? "" : `<button type="button" class="entry-edit" data-a="edit">${App.icon("edit")} Edit</button>`}

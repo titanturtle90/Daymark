@@ -1,6 +1,7 @@
 /*
- * Entry editor: a full-height sheet for writing (or dictating) an entry,
- * attaching photos, tags, location and a highlight star.
+ * Entry editor: a full-height sheet for writing (or dictating) an entry in
+ * stacked sections (Sleep, Work, Personal, Mental, Gym), attaching photos,
+ * tags, location and a highlight star.
  */
 (function (App) {
   "use strict";
@@ -15,7 +16,7 @@
     let restored = false;
     if (isNew) {
       const draft = App.lsGet(DRAFT_KEY, null);
-      if (draft && (draft.text || (draft.photos || []).length)) {
+      if (draft && (App.entryText(draft) || (draft.photos || []).length)) {
         e = draft; restored = true;
       } else {
         e = App.store.newEntry(date || App.todayStr());
@@ -23,7 +24,11 @@
     } else {
       e = JSON.parse(JSON.stringify(entry));
     }
-    const initial = JSON.stringify(e);
+    e.sections = { ...(e.sections || {}) };
+    // Trimmed, empty sections dropped: what actually gets saved (and compared for "discard changes?").
+    const compact = secs => Object.fromEntries(App.SECTIONS.map(x => [x.key, String((secs || {})[x.key] || "").trim()]).filter(([, v]) => v));
+    const snapshot = () => JSON.stringify({ ...e, text: String(e.text || "").trim(), sections: compact(e.sections) });
+    const initial = snapshot();
     // Photos uploaded in this editing session (deleted again if you discard).
     const newUploads = new Set(isNew ? (e.photos || []).map(p => p.id) : []);
     // Saved photos you removed (deleted from storage only once you save).
@@ -40,10 +45,8 @@
             <label class="field"><span>Date</span><input type="date" name="date" required></label>
             <label class="field"><span>Time</span><input type="time" name="time"></label>
           </div>
-          <div class="ed-paper">
-            <textarea name="text" rows="6" placeholder="What did you do?"></textarea>
-          </div>
-          <p class="hint">${App.icon("mic")}<span>Tip: tap the microphone on your keyboard to talk instead of typing.</span></p>
+          <div class="ed-fields"></div>
+          <p class="hint">${App.icon("mic")}<span>Tip: tap the microphone on your keyboard to talk instead of typing. Fill in only the sections you want.</span></p>
 
           <section class="ed-section">
             <div class="ed-label">${App.icon("image")} Photos</div>
@@ -67,7 +70,7 @@
           <button type="button" class="btn primary" data-a="save">${App.icon("check")} Save</button>
         </div>`,
       beforeClose: async () => {
-        if (JSON.stringify(e) === initial && !newUploads.size) return true;
+        if (snapshot() === initial && !newUploads.size) return true;
         const ok = await App.confirm({ title: "Discard changes?", message: "What you wrote here hasn't been saved.", confirmText: "Discard", cancelText: "Keep editing", danger: true });
         if (ok) discard();
         return ok;
@@ -77,7 +80,6 @@
     const form = sheet.body.querySelector("form");
     const dateIn = form.elements.date;
     const timeIn = form.elements.time;
-    const textIn = form.elements.text;
 
     // ---- star toggle in the sheet header ----
     const starBtn = App.el(`<button type="button" class="icon-btn star-btn" aria-label="Highlight">${App.icon("star")}</button>`);
@@ -86,35 +88,49 @@
     starBtn.onclick = () => { e.starred = !e.starred; paintStar(); changed(); };
     paintStar();
 
-    // ---- date, time, text ----
+    // ---- date, time, notes sections ----
     dateIn.value = e.date;
     timeIn.value = e.time || "";
-    textIn.value = e.text || "";
     const scroller = sheet.body;
-    const paper = form.querySelector(".ed-paper");
-    // Fit the textarea to its text. Measuring means briefly setting
+    // Older entries keep their single block of text as a "Notes" box on top.
+    const fields = [];
+    if (e.text) fields.push({ key: "text", label: "Notes", hint: "" });
+    App.SECTIONS.forEach(x => fields.push({ key: x.key, label: x.label, hint: x.hint }));
+    const getVal = f => String((f.key === "text" ? e.text : e.sections[f.key]) || "");
+    const setVal = (f, v) => { if (f.key === "text") e.text = v; else e.sections[f.key] = v; };
+    const fieldsEl = form.querySelector(".ed-fields");
+    fieldsEl.innerHTML = fields.map(f => `
+      <section class="ed-field">
+        <label class="ed-field-label" for="ed-f-${f.key}">${App.escapeHtml(f.label)}</label>
+        <div class="ed-paper"><textarea id="ed-f-${f.key}" rows="2" placeholder="${App.escapeHtml(f.hint)}"></textarea></div>
+      </section>`).join("");
+    fieldsEl.querySelectorAll("textarea").forEach((ta, i) => { fields[i].el = ta; ta.value = getVal(fields[i]); });
+
+    // Fit a textarea to its text. Measuring means briefly setting
     // height:auto, which would shrink the sheet and snap its scroll back to
     // the top, so hold the paper's height and the scroll position meanwhile.
-    const grow = () => {
+    const grow = ta => {
       const top = scroller.scrollTop;
+      const paper = ta.closest(".ed-paper");
       paper.style.minHeight = paper.offsetHeight + "px";
-      textIn.style.height = "auto";
-      textIn.style.height = Math.max(textIn.scrollHeight, 180) + "px";
+      ta.style.height = "auto";
+      ta.style.height = Math.max(ta.scrollHeight, 60) + "px";
       paper.style.minHeight = "";
       scroller.scrollTop = top;
     };
     // Keep the line being typed visible above the keyboard and Save bar.
     const mirror = document.createElement("div");
     const keepCaretVisible = () => {
-      if (document.activeElement !== textIn) return;
-      const cs = getComputedStyle(textIn);
-      mirror.style.cssText = `position:absolute;visibility:hidden;top:0;left:-9999px;white-space:pre-wrap;overflow-wrap:break-word;box-sizing:border-box;width:${textIn.clientWidth}px;font:${cs.font};line-height:${cs.lineHeight};padding:${cs.padding};letter-spacing:${cs.letterSpacing}`;
-      mirror.textContent = textIn.value.slice(0, textIn.selectionEnd);
+      const ta = document.activeElement;
+      if (!fields.some(f => f.el === ta)) return;
+      const cs = getComputedStyle(ta);
+      mirror.style.cssText = `position:absolute;visibility:hidden;top:0;left:-9999px;white-space:pre-wrap;overflow-wrap:break-word;box-sizing:border-box;width:${ta.clientWidth}px;font:${cs.font};line-height:${cs.lineHeight};padding:${cs.padding};letter-spacing:${cs.letterSpacing}`;
+      mirror.textContent = ta.value.slice(0, ta.selectionEnd);
       const marker = document.createElement("span");
-      marker.textContent = "​";
+      marker.textContent = "\u200b";
       mirror.appendChild(marker);
       document.body.appendChild(mirror);
-      const caretBottom = textIn.getBoundingClientRect().top + marker.offsetTop + parseFloat(cs.lineHeight || 30);
+      const caretBottom = ta.getBoundingClientRect().top + marker.offsetTop + parseFloat(cs.lineHeight || 30);
       mirror.remove();
       const vv = window.visualViewport;
       const footer = sheet.body.querySelector(".ed-footer");
@@ -129,9 +145,11 @@
     dateIn.onchange = () => { if (dateIn.value) e.date = dateIn.value; changed(); };
     timeIn.onchange = () => { e.time = timeIn.value || null; changed(); };
     const suggestLater = App.debounce(() => renderSuggest(), 400);
-    textIn.oninput = () => { e.text = textIn.value; grow(); keepCaretVisible(); changed(); suggestLater(); };
-    textIn.onfocus = () => setTimeout(keepCaretVisible, 350); // after the keyboard slides up
-    requestAnimationFrame(grow);
+    fields.forEach(f => {
+      f.el.oninput = () => { setVal(f, f.el.value); grow(f.el); keepCaretVisible(); changed(); suggestLater(); };
+      f.el.onfocus = () => setTimeout(keepCaretVisible, 350); // after the keyboard slides up
+    });
+    requestAnimationFrame(() => fields.forEach(f => grow(f.el)));
 
     let finished = false; // saved or discarded: a pending draft write must not resurrect it
     const saveDraft = App.debounce(() => { if (isNew && !finished) App.lsSet(DRAFT_KEY, e); }, 400);
@@ -205,7 +223,7 @@
       const q = App.norm(tagIn.value.replace(/^#/, ""));
       const have = new Set((e.tags || []).map(App.norm));
       // People from Settings → People mentioned in the text come first ("Jimmy" → James Agan).
-      const text = App.searchText(e.text || "");
+      const text = App.searchText(App.entryText(e));
       const people = q ? [] : (App.store.settings.people || [])
         .filter(x => !have.has(App.norm(x.name)) && App.groupMatches(text, { kind: "person", alts: [x.name, ...(x.aliases || [])] }))
         .map(x => x.name);
@@ -264,9 +282,10 @@
     sheet.body.querySelector('[data-a="save"]').onclick = async () => {
       if (uploading) return App.toast("Hang on, photos are still uploading…");
       if (tagIn.value.trim()) addTag(tagIn.value);
-      e.text = (e.text || "").trim();
+      e.text = String(e.text || "").trim();
+      e.sections = compact(e.sections);
       if (e.location && !e.location.label.trim()) e.location = null;
-      if (!e.text && !(e.photos || []).length) return App.toast("Write something or add a photo first.");
+      if (!App.entryText(e) && !(e.photos || []).length) return App.toast("Write something or add a photo first.");
       if (!e.date) return App.toast("Pick a date.");
       locToken++;
       try {
@@ -295,6 +314,6 @@
     };
 
     if (restored) App.toast("Restored your unsaved draft");
-    if (isNew && !restored) setTimeout(() => textIn.focus(), 320);
+    if (isNew && !restored) setTimeout(() => fields[0].el.focus(), 320);
   };
 })(window.App);

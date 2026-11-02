@@ -530,3 +530,10 @@ mark { background: var(--gold-soft); color: inherit; border-radius: 3px; padding
 .name-chip button small { color: var(--ink-3); font-weight: 400; }
 .name-chip button + button { padding: 5px 10px 5px 4px; color: var(--ink-3); }
 .name-chip .ic { width: 14px; height: 14px; }
+
+/* ---------- stacked entry sections ---------- */
+.ed-fields { display: flex; flex-direction: column; gap: 14px; }
+.ed-field-label { display: block; margin: 0 2px 6px; font-size: 13px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--accent); }
+.ed-field .ed-paper textarea { min-height: 60px; font-size: 17.5px; }
+.entry-sec + .entry-sec { margin-top: 12px; }
+.entry-sec-label { font-size: 12px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--accent); margin-bottom: 1px; }

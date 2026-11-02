@@ -51,7 +51,7 @@
   }
 
   function snippet(e, len) {
-    const t = (e.text || "").replace(/\s+/g, " ").trim();
+    const t = App.entryOverview(e);
     if (!t) return (e.photos || []).length ? App.plural(e.photos.length, "photo") : "";
     return t.length > len ? t.slice(0, len).replace(/\s\S*$/, "") + "…" : t;
   }
@@ -111,7 +111,7 @@
           ${starredCount ? `<small class="section-note">${App.icon("star")} ${App.plural(starredCount, "highlight")}</small>` : ""}</h2>
         <div class="list">${shown.map(d => {
           const list = App.store.forDate(d);
-          const e = list.find(x => x.starred && x.text) || list.find(x => x.text) || list[0];
+          const e = list.find(x => x.starred && App.entryText(x)) || list.find(x => App.entryText(x)) || list[0];
           const thumb = dayThumb(list);
           return `
             <a class="list-row day-row" href="#/day/${d}">
@@ -151,7 +151,7 @@
           ${past.slice(0, 2).map(d => {
             const yrs = Number(today.slice(0, 4)) - Number(d.slice(0, 4));
             const list = App.store.forDate(d);
-            const e = list.find(x => x.starred && x.text) || list.find(x => x.text) || list[0];
+            const e = list.find(x => x.starred && App.entryText(x)) || list.find(x => App.entryText(x)) || list[0];
             return `<div class="otd-line"><strong>${yrs === 1 ? "1 year ago" : `${yrs} years ago`}</strong> ${App.escapeHtml(snippet(e, 90))}</div>`;
           }).join("")}
         </a>` : ""}

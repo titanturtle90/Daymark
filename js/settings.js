@@ -17,7 +17,7 @@
     const counts = new Map();
     const lower = new Set();
     for (const e of App.store.all()) {
-      const text = e.text || "";
+      const text = App.entryText(e);
       (text.match(/\b[a-z][a-z']+\b/g) || []).forEach(w => lower.add(w));
       const seen = new Set();
       text.split(/[.!?\n]+/).forEach(sentence => {

@@ -6,7 +6,8 @@
  *  - Local mode: IndexedDB in this browser only.
  *
  * Entry shape:
- *  { id, date: "YYYY-MM-DD", time: "HH:MM" | null, text, tags: [],
+ *  { id, date: "YYYY-MM-DD", time: "HH:MM" | null, text (older free notes),
+ *    sections: { sleep, work, personal, mental, gym }, tags: [],
  *    starred, location: { label, lat, lng } | null,
  *    photos: [{ id, w, h, url?, thumbUrl?, takenAt?, sourceKey? }],
  *    source: "manual" | "photo-import", createdAt, updatedAt }
@@ -200,7 +201,7 @@
       if (!vocabCache) {
         const words = new Set();
         for (const e of entries.values()) {
-          const text = [e.text, (e.tags || []).join(" "), e.location && e.location.label].filter(Boolean).join(" ");
+          const text = [App.entryText(e), (e.tags || []).join(" "), e.location && e.location.label].filter(Boolean).join(" ");
           App.searchText(text).split(" ").forEach(w => { if (w.length > 1) words.add(w); });
         }
         vocabCache = [...words];
@@ -266,7 +267,7 @@
 
     newEntry: (date) => ({
       id: App.genId(), date, time: date === App.todayStr() ? App.nowTime() : null,
-      text: "", tags: [], starred: false, location: null, photos: [], source: "manual"
+      text: "", sections: {}, tags: [], starred: false, location: null, photos: [], source: "manual"
     })
   };
 
