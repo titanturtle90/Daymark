@@ -11,7 +11,10 @@
       ".github",
       "**/.*",
       "**/node_modules/**",
-      "tests/**"
+      "tests/**",
+      "key.json",
+      "**/*service-account*.json",
+      "**/*-key.json"
     ],
     "headers": [
       {
