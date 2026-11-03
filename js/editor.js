@@ -106,6 +106,14 @@
       </section>`).join("");
     fieldsEl.querySelectorAll("textarea").forEach((ta, i) => { fields[i].el = ta; ta.value = getVal(fields[i]); });
 
+    // No Work box on weekends, unless something is already written in it.
+    const workBox = fields.find(f => f.key === "work").el.closest(".ed-field");
+    const syncWeekend = () => {
+      const wd = App.parseDate(e.date).getDay();
+      workBox.hidden = (wd === 0 || wd === 6) && !String(e.sections.work || "").trim();
+    };
+    syncWeekend();
+
     // Fit a textarea to its text. Measuring means briefly setting
     // height:auto, which would shrink the sheet and snap its scroll back to
     // the top, so hold the paper's height and the scroll position meanwhile.
@@ -142,7 +150,7 @@
     const onViewport = () => requestAnimationFrame(keepCaretVisible);
     if (window.visualViewport) window.visualViewport.addEventListener("resize", onViewport);
     sheet.onClosed = () => { if (window.visualViewport) window.visualViewport.removeEventListener("resize", onViewport); };
-    dateIn.onchange = () => { if (dateIn.value) e.date = dateIn.value; changed(); };
+    dateIn.onchange = () => { if (dateIn.value) e.date = dateIn.value; syncWeekend(); changed(); };
     timeIn.onchange = () => { e.time = timeIn.value || null; changed(); };
     const suggestLater = App.debounce(() => renderSuggest(), 400);
     fields.forEach(f => {

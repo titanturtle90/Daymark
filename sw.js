@@ -1,9 +1,9 @@
-const CACHE_NAME = "daymark-v12";
+const CACHE_NAME = "daymark-v13";
 const PRECACHE_URLS = [
   "./index.html", "./manifest.json", "./icon-192.png", "./icon-512.png", "./apple-touch-icon.png",
   "./css/app.css?v=10",
   "./js/config.js?v=2", "./js/core.js?v=3", "./js/photos.js?v=1", "./js/store.js?v=3", "./js/lock.js?v=1",
-  "./js/editor.js?v=4", "./js/calendar.js?v=3", "./js/day.js?v=3", "./js/query.js?v=4", "./js/search.js?v=6", "./js/onthisday.js?v=1",
+  "./js/editor.js?v=5", "./js/calendar.js?v=3", "./js/day.js?v=3", "./js/query.js?v=4", "./js/search.js?v=6", "./js/onthisday.js?v=1",
   "./js/backup.js?v=2", "./js/import.js?v=1", "./js/settings.js?v=4", "./js/app.js?v=2"
 ];
 
